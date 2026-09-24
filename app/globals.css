@@ -1,0 +1,138 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap");
+@import "tailwindcss";
+
+:root {
+  /* Brand colors — change these to re-theme PK across the whole site */
+  --pk-bg: #0a0b0f;
+  --pk-bg-elevated: #101219;
+  --pk-surface: #14161f;
+  --pk-surface-2: #1b1e2a;
+  --pk-border: #262a38;
+  --pk-border-strong: #343948;
+
+  --pk-text: #f4f5f7;
+  --pk-text-muted: #9aa1b2;
+  --pk-text-faint: #6b7182;
+
+  --pk-accent: #c8ff4d;       /* signal lime — primary CTA / highlight */
+  --pk-accent-ink: #0a0b0f;   /* text color on top of accent */
+  --pk-accent-2: #6f83ff;     /* secondary indigo — links, secondary accents */
+  --pk-positive: #34d399;
+  --pk-negative: #f87171;
+
+  --pk-radius-sm: 8px;
+  --pk-radius-md: 14px;
+  --pk-radius-lg: 22px;
+
+  --pk-container: 1240px;
+}
+
+@theme inline {
+  --color-bg: var(--pk-bg);
+  --color-bg-elevated: var(--pk-bg-elevated);
+  --color-surface: var(--pk-surface);
+  --color-surface-2: var(--pk-surface-2);
+  --color-border: var(--pk-border);
+  --color-border-strong: var(--pk-border-strong);
+  --color-text: var(--pk-text);
+  --color-text-muted: var(--pk-text-muted);
+  --color-text-faint: var(--pk-text-faint);
+  --color-accent: var(--pk-accent);
+  --color-accent-ink: var(--pk-accent-ink);
+  --color-accent-2: var(--pk-accent-2);
+  --color-positive: var(--pk-positive);
+  --color-negative: var(--pk-negative);
+
+  --font-display: "Manrope", var(--font-sans);
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--pk-bg);
+  color: var(--pk-text);
+  font-family: var(--font-sans), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+::selection {
+  background: var(--pk-accent);
+  color: var(--pk-accent-ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--pk-accent);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+.pk-container {
+  width: 100%;
+  max-width: var(--pk-container);
+  margin-inline: auto;
+  padding-inline: 20px;
+}
+
+@media (min-width: 768px) {
+  .pk-container {
+    padding-inline: 32px;
+  }
+}
+
+.pk-display {
+  font-family: var(--font-manrope), sans-serif;
+  letter-spacing: -0.02em;
+}
+
+/* Reveal-on-scroll primitive, driven by IntersectionObserver in Reveal.tsx */
+.pk-reveal {
+  opacity: 0;
+  transform: translateY(18px);
+  transition: opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1), transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.pk-reveal.pk-in {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pk-reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+/* thin scrollbar for horizontally-scrolling mobile rows */
+.pk-scroll-x {
+  scrollbar-width: thin;
+  scrollbar-color: var(--pk-border-strong) transparent;
+}
+.pk-scroll-x::-webkit-scrollbar {
+  height: 6px;
+}
+.pk-scroll-x::-webkit-scrollbar-thumb {
+  background: var(--pk-border-strong);
+  border-radius: 999px;
+}
+
+.pk-grain {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.5;
+  mix-blend-mode: overlay;
+  background-image: radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.06) 1px, transparent 0);
+  background-size: 3px 3px;
+}
