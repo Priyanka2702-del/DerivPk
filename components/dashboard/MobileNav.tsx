@@ -10,8 +10,7 @@ import {
    ArrowDownToLine, ArrowUpFromLine, Repeat2, LayoutGrid, Handshake, Users,
 } from "lucide-react";
 import Logo from "@/components/Logo";
-import { logout } from "@/lib/session";
-
+import { logoutUser } from "@/lib/client-auth";
 const links = [
   { label: "Home", href: "/dashboard", icon: Home },
   { label: "Live Trading", href: "/dashboard/live-trading", icon: Radio },
@@ -87,11 +86,11 @@ isActive(l.href) ? "bg-accent-2/10 text-accent-2" : "text-text-muted hover:bg-su
 
             <button
               type="button"
-              onClick={() => {
-                logout();
-                setOpen(false);
-                router.push("/login");
-              }}
+              onClick={async () => {
+  await logoutUser();
+  setOpen(false);
+  router.push("/login");
+}}      
               className="mt-4 flex items-center gap-3 rounded-lg border-t border-border px-3 pt-4 text-left text-sm font-medium text-text-muted hover:text-text"
             >
               <LogOut size={17} />

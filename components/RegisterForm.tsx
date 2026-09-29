@@ -2,61 +2,118 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { login } from "@/lib/session";
 
 export default function RegisterForm() {
   const router = useRouter();
-  const [submitting, setSubmitting] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleSubmit = async (
+    e: React.FormEvent<HTMLFormElement>
+  ) => {
     e.preventDefault();
+
     setSubmitting(true);
-    // Demo/local auth only — no backend is connected yet. Swap this for a
-    // real account-creation API call once one is available; the dashboard
-    // itself only ever depends on isLoggedIn()/login()/logout() from
-    // @/lib/session, so nothing else needs to change.
-    login();
-    router.push("/dashboard");
+    setError("");
+
+    const formData = new FormData(e.currentTarget);
+
+    const name = formData.get("name");
+    const email = formData.get("email");
+    const password = formData.get("password");
+
+    try {
+      const response = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+        body: JSON.stringify({
+          name,
+          email,
+          password,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setError(data.message || "Registration failed.");
+        return;
+      }
+
+      // Registration successful.
+      // Now send user to login page.
+      router.push("/login");
+      router.refresh();
+    } catch (error) {
+      console.error("Registration request failed:", error);
+
+      setError(
+        "Unable to connect to the server. Please try again."
+      );
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
-    <form className="mt-6 flex flex-col gap-4" onSubmit={handleSubmit}>
+    <form
+      className="mt-6 flex flex-col gap-4"
+      onSubmit={handleSubmit}
+    >
       <label className="flex flex-col gap-1.5 text-sm text-text-muted">
         Full name
+
         <input
           type="text"
+          name="name"
           required
           placeholder="Jordan Lee"
-          className="rounded-[var(--pk-radius-sm)] border border-border-strong bg-bg-elevated px-3.5 py-2.5 text-text outline-none transition focus-visible:border-[#ff3f4e] focus-visible:ring-2 focus-visible:ring-[#ff3f4e]/20"
+          className="rounded-lg border border-border bg-surface px-3 py-2.5 text-sm text-text outline-none focus:border-accent-2"
         />
       </label>
 
       <label className="flex flex-col gap-1.5 text-sm text-text-muted">
         Email
+
         <input
           type="email"
+          name="email"
           required
           placeholder="you@example.com"
-          className="rounded-[var(--pk-radius-sm)] border border-border-strong bg-bg-elevated px-3.5 py-2.5 text-text outline-none transition focus-visible:border-[#ff3f4e] focus-visible:ring-2 focus-visible:ring-[#ff3f4e]/20"
+          className="rounded-lg border border-border bg-surface px-3 py-2.5 text-sm text-text outline-none focus:border-accent-2"
         />
       </label>
 
       <label className="flex flex-col gap-1.5 text-sm text-text-muted">
         Password
+
         <input
           type="password"
+          name="password"
           required
           placeholder="••••••••"
-          className="rounded-[var(--pk-radius-sm)] border border-border-strong bg-bg-elevated px-3.5 py-2.5 text-text outline-none transition focus-visible:border-[#ff3f4e] focus-visible:ring-2 focus-visible:ring-[#ff3f4e]/20"
+          className="rounded-lg border border-border bg-surface px-3 py-2.5 text-sm text-text outline-none focus:border-accent-2"
         />
       </label>
+
+      {error && (
+        <p className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2.5 text-sm text-red-500">
+          {error}
+        </p>
+      )}
 
       <button
         type="submit"
         disabled={submitting}
-        className="mt-2 rounded-full bg-[#ff3f4e] px-5 py-2.5 text-sm font-semibold text-white shadow-[0_18px_45px_rgba(255,63,78,0.28)] transition hover:-translate-y-0.5 hover:bg-[#ff5260] disabled:cursor-not-allowed disabled:opacity-60"
+        className="rounded-lg bg-accent-2 px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
       >
-        {submitting ? "Creating account…" : "Create account"}
+        {submitting
+          ? "Creating account…"
+          : "Create account"}
       </button>
     </form>
   );
