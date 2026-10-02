@@ -26,12 +26,3 @@ export type DerivCandle = {
   low: number;
   close: number;
 };
-
-export function createDerivWebSocket(): WebSocket {
-  console.log(
-    "🔌 Creating Deriv WebSocket:",
-    DERIV_PUBLIC_WS
-  );
-
-  return new WebSocket(DERIV_PUBLIC_WS);
-}

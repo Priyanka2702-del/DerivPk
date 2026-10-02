@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import {
+  useEffect,
+  useState,
+} from "react";
 
 import {
-  createDerivWebSocket,
   DerivCandle,
   DerivSymbol,
   DerivTick,
@@ -14,13 +16,15 @@ function isValidDerivSymbol(
 ): boolean {
   return (
     typeof symbol === "string" &&
-    /^\w{2,30}$/.test(symbol.trim())
+    /^\w{2,30}$/.test(
+      symbol.trim()
+    )
   );
 }
 
-/* =========================================================
-   DERIV SYMBOLS
-   ========================================================= */
+/* =====================================================
+   SYMBOLS
+===================================================== */
 
 export function useDerivSymbols() {
   const [symbols, setSymbols] =
@@ -35,122 +39,67 @@ export function useDerivSymbols() {
   useEffect(() => {
     let cancelled = false;
 
-    const ws = createDerivWebSocket();
-
-    setLoading(true);
-    setError(null);
-
-    ws.onopen = () => {
-      console.log(
-        "✅ Connected to Deriv for symbols"
-      );
-
-      ws.send(
-        JSON.stringify({
-          active_symbols: "brief",
-          req_id: 1,
-        })
-      );
-    };
-
-    ws.onmessage = (event) => {
+    async function loadSymbols() {
       try {
-        const data = JSON.parse(
-          event.data
-        );
+        setLoading(true);
+        setError(null);
 
-        if (data.error) {
-          console.error(
-            "❌ DERIV SYMBOL ERROR:",
-            data.error
+        const response =
+          await fetch(
+            "/api/deriv/market/symbols",
+            {
+              cache: "no-store",
+            }
           );
 
-          if (!cancelled) {
-            setError(
-              data.error.message ||
-                "Unable to load symbols"
-            );
-
-            setLoading(false);
-          }
-
-          ws.close();
-
-          return;
-        }
+        const data =
+          await response.json();
 
         if (
-          data.msg_type ===
-            "active_symbols" &&
-          data.req_id === 1
+          !response.ok ||
+          !data.success
         ) {
-          const receivedSymbols =
-            Array.isArray(
-              data.active_symbols
-            )
-              ? data.active_symbols
-              : [];
-
-          if (!cancelled) {
-            setSymbols(
-              receivedSymbols
-            );
-
-            setLoading(false);
-          }
-
-          console.log(
-            "✅ Deriv symbols loaded:",
-            receivedSymbols.length
+          throw new Error(
+            data.message ||
+              "Unable to load Deriv symbols"
           );
-
-          ws.close();
         }
-      } catch (error) {
-        console.error(
-          "❌ DERIV SYMBOL PARSE ERROR:",
-          error
-        );
 
         if (!cancelled) {
-          setError(
-            "Unable to parse Deriv symbols"
+          setSymbols(
+            Array.isArray(
+              data.symbols
+            )
+              ? data.symbols
+              : []
           );
 
           setLoading(false);
         }
-
-        ws.close();
-      }
-    };
-
-    ws.onerror = (event) => {
-      console.error(
-        "❌ DERIV SYMBOL WEBSOCKET ERROR:",
-        event
-      );
-
-      if (!cancelled) {
-        setError(
-          "Unable to connect to Deriv market"
+      } catch (error) {
+        console.error(
+          "DERIV SYMBOL API ERROR:",
+          error
         );
 
-        setLoading(false);
-      }
-    };
+        if (!cancelled) {
+          setSymbols([]);
 
-    ws.onclose = () => {
-      console.log(
-        "🔌 Deriv symbols WebSocket closed"
-      );
-    };
+          setError(
+            error instanceof Error
+              ? error.message
+              : "Unable to load Deriv symbols"
+          );
+
+          setLoading(false);
+        }
+      }
+    }
+
+    loadSymbols();
 
     return () => {
       cancelled = true;
-
-      try {
-        ws.close();
-      } catch {}
     };
   }, []);
 
@@ -161,15 +110,17 @@ export function useDerivSymbols() {
   };
 }
 
-/* =========================================================
-   DERIV LIVE TICK
-   ========================================================= */
+/* =====================================================
+   LIVE TICK
+===================================================== */
 
 export function useDerivTick(
   symbol: string
 ) {
   const [tick, setTick] =
-    useState<DerivTick | null>(null);
+    useState<DerivTick | null>(
+      null
+    );
 
   const [error, setError] =
     useState<string | null>(null);
@@ -193,81 +144,95 @@ export function useDerivTick(
 
     let cancelled = false;
 
-    const ws =
-      createDerivWebSocket();
-
     setTick(null);
     setError(null);
 
-    ws.onopen = () => {
-      console.log(
-        `✅ Connected to Deriv for tick: ${cleanSymbol}`
+    const eventSource =
+      new EventSource(
+        `/api/deriv/market/stream?symbol=${encodeURIComponent(
+          cleanSymbol
+        )}`
       );
 
-      ws.send(
-        JSON.stringify({
-          ticks: [cleanSymbol],
-          subscribe: 1,
-          req_id: 2,
-        })
+    eventSource.onopen = () => {
+      console.log(
+        "Connected to Deriv live stream:",
+        cleanSymbol
       );
     };
 
-    ws.onmessage = (event) => {
+    eventSource.onmessage = (
+      event
+    ) => {
       try {
-        const data = JSON.parse(
-          event.data
-        );
-
-        if (data.error) {
-          console.error(
-            "❌ DERIV TICK ERROR:",
-            data.error
+        const data =
+          JSON.parse(
+            event.data
           );
 
-          if (!cancelled) {
-            setError(
-              data.error.message ||
-                "Unable to fetch live price"
-            );
-          }
-
-          ws.close();
+        if (
+          data.type ===
+          "connected"
+        ) {
+          console.log(
+            "Deriv stream ready:",
+            data.symbol
+          );
 
           return;
         }
 
         if (
-          data.msg_type === "tick" &&
-          data.tick
+          data.type === "heartbeat"
+        ) {
+          return;
+        }
+
+        if (
+          data.type === "tick"
         ) {
           if (!cancelled) {
             setTick({
               symbol:
-                data.tick.symbol,
-              quote:
-                Number(
-                  data.tick.quote
-                ),
-              epoch:
-                Number(
-                  data.tick.epoch
-                ),
+                data.symbol,
+              quote: Number(
+                data.quote
+              ),
+              epoch: Number(
+                data.epoch
+              ),
             });
+          }
+
+          return;
+        }
+
+        if (
+          data.type === "error"
+        ) {
+          console.error(
+            "DERIV STREAM ERROR:",
+            data.message
+          );
+
+          if (!cancelled) {
+            setError(
+              data.message ||
+                "Live market connection failed"
+            );
           }
         }
       } catch (error) {
         console.error(
-          "❌ DERIV TICK PARSE ERROR:",
+          "DERIV SSE PARSE ERROR:",
           error
         );
       }
     };
 
-    ws.onerror = (event) => {
+    eventSource.onerror = () => {
       console.error(
-        "❌ DERIV TICK WEBSOCKET ERROR:",
-        event
+        "DERIV SSE CONNECTION ERROR"
       );
 
       if (!cancelled) {
@@ -275,33 +240,33 @@ export function useDerivTick(
           "Live market connection failed"
         );
       }
-    };
 
-    ws.onclose = () => {
-      console.log(
-        `🔌 Deriv tick WebSocket closed: ${cleanSymbol}`
-      );
+      eventSource.close();
     };
 
     return () => {
       cancelled = true;
 
-      try {
-        ws.close();
-      } catch {}
+      eventSource.close();
+
+      console.log(
+        "Deriv live stream closed:",
+        cleanSymbol
+      );
     };
   }, [symbol]);
 
   return {
     tick,
-    loading: !tick && !error,
+    loading:
+      !tick && !error,
     error,
   };
 }
 
-/* =========================================================
-   DERIV CANDLES
-   ========================================================= */
+/* =====================================================
+   CANDLES
+===================================================== */
 
 export function useDerivCandles(
   symbol: string,
@@ -326,9 +291,11 @@ export function useDerivCandles(
       )
     ) {
       setCandles([]);
+
       setError(
         "Invalid Deriv symbol"
       );
+
       setLoading(false);
 
       return;
@@ -336,154 +303,102 @@ export function useDerivCandles(
 
     let cancelled = false;
 
-    const ws =
-      createDerivWebSocket();
-
-    setCandles([]);
-    setLoading(true);
-    setError(null);
-
-    ws.onopen = () => {
-      console.log(
-        `✅ Connected to Deriv for candles: ${cleanSymbol}`
-      );
-
-      ws.send(
-        JSON.stringify({
-          ticks_history:
-            cleanSymbol,
-          count: 100,
-          end: "latest",
-          style: "candles",
-          granularity,
-          req_id: 3,
-        })
-      );
-    };
-
-    ws.onmessage = (event) => {
+    async function loadCandles() {
       try {
-        const data = JSON.parse(
-          event.data
-        );
+        setLoading(true);
+        setError(null);
 
-        if (data.error) {
-          console.error(
-            "❌ DERIV CANDLES ERROR:",
-            data.error
+        const response =
+          await fetch(
+            `/api/deriv/market/candles?symbol=${encodeURIComponent(
+              cleanSymbol
+            )}&granularity=${granularity}`,
+            {
+              cache: "no-store",
+            }
           );
 
-          if (!cancelled) {
-            setError(
-              data.error.message ||
-                "Unable to fetch candles"
-            );
-
-            setLoading(false);
-          }
-
-          ws.close();
-
-          return;
-        }
+        const data =
+          await response.json();
 
         if (
-          data.msg_type ===
-            "candles" &&
-          data.req_id === 3
+          !response.ok ||
+          !data.success
         ) {
-          const receivedCandles =
-            Array.isArray(
-              data.candles
-            )
-              ? data.candles.map(
-                  (
-                    candle: any
-                  ) => ({
-                    epoch:
-                      Number(
-                        candle.epoch
-                      ),
-                    open:
-                      Number(
-                        candle.open
-                      ),
-                    high:
-                      Number(
-                        candle.high
-                      ),
-                    low:
-                      Number(
-                        candle.low
-                      ),
-                    close:
-                      Number(
-                        candle.close
-                      ),
-                  })
-                )
-              : [];
-
-          if (!cancelled) {
-            setCandles(
-              receivedCandles
-            );
-
-            setLoading(false);
-          }
-
-          console.log(
-            "✅ Deriv candles loaded:",
-            receivedCandles.length
+          throw new Error(
+            data.message ||
+              "Unable to fetch Deriv candles"
           );
-
-          ws.close();
         }
-      } catch (error) {
-        console.error(
-          "❌ DERIV CANDLES PARSE ERROR:",
-          error
-        );
+
+        const receivedCandles =
+          Array.isArray(
+            data.candles
+          )
+            ? data.candles.map(
+                (
+                  candle: any
+                ) => ({
+                  epoch:
+                    Number(
+                      candle.epoch
+                    ),
+                  open:
+                    Number(
+                      candle.open
+                    ),
+                  high:
+                    Number(
+                      candle.high
+                    ),
+                  low:
+                    Number(
+                      candle.low
+                    ),
+                  close:
+                    Number(
+                      candle.close
+                    ),
+                })
+              )
+            : [];
 
         if (!cancelled) {
-          setError(
-            "Unable to parse candle data"
+          setCandles(
+            receivedCandles
           );
 
           setLoading(false);
         }
 
-        ws.close();
-      }
-    };
-
-    ws.onerror = (event) => {
-      console.error(
-        "❌ DERIV CANDLES WEBSOCKET ERROR:",
-        event
-      );
-
-      if (!cancelled) {
-        setError(
-          "Unable to connect to Deriv candles"
+        console.log(
+          "Deriv candles loaded:",
+          receivedCandles.length
+        );
+      } catch (error) {
+        console.error(
+          "DERIV CANDLES API ERROR:",
+          error
         );
 
-        setLoading(false);
-      }
-    };
+        if (!cancelled) {
+          setCandles([]);
 
-    ws.onclose = () => {
-      console.log(
-        `🔌 Deriv candles WebSocket closed: ${cleanSymbol}`
-      );
-    };
+          setError(
+            error instanceof Error
+              ? error.message
+              : "Unable to fetch Deriv candles"
+          );
+
+          setLoading(false);
+        }
+      }
+    }
+
+    loadCandles();
 
     return () => {
       cancelled = true;
-
-      try {
-        ws.close();
-      } catch {}
     };
   }, [
     symbol,

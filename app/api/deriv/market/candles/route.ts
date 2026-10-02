@@ -1,100 +1,81 @@
 import { NextRequest, NextResponse } from "next/server";
+
+import {
+  DERIV_PUBLIC_WS,
+  DerivCandle,
+} from "@/lib/deriv-market";
+
 import WebSocket from "ws";
 
 export const runtime = "nodejs";
 
-const DERIV_PUBLIC_WS =
-  "wss://api.derivws.com/trading/v1/options/ws/public";
+export async function GET(
+  request: NextRequest
+) {
+  const symbol =
+    request.nextUrl.searchParams.get("symbol");
 
-export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
+  const granularityParam =
+    request.nextUrl.searchParams.get(
+      "granularity"
+    );
 
-  const symbol = searchParams.get("symbol");
-  const granularityParam = searchParams.get("granularity");
+  const granularity = Number(
+    granularityParam || 60
+  );
 
   if (!symbol) {
     return NextResponse.json(
       {
         success: false,
         message: "Symbol is required",
-        example:
-          "/api/deriv/market/candles?symbol=frxEURUSD&granularity=60",
       },
-      { status: 400 }
-    );
-  }
-
-  if (!/^\w{2,30}$/.test(symbol)) {
-    return NextResponse.json(
       {
-        success: false,
-        message: "Invalid symbol format",
-      },
-      { status: 400 }
+        status: 400,
+      }
     );
   }
 
-  const granularity = granularityParam
-    ? Number(granularityParam)
-    : 60;
-
-  if (!Number.isInteger(granularity) || granularity <= 0) {
+  if (
+    !Number.isFinite(granularity) ||
+    granularity <= 0
+  ) {
     return NextResponse.json(
       {
         success: false,
         message: "Invalid granularity",
       },
-      { status: 400 }
-    );
-  }
-
-  try {
-    const candles = await getDerivCandles(
-      symbol,
-      granularity
-    );
-
-    return NextResponse.json({
-      success: true,
-      symbol,
-      granularity,
-      count: candles.length,
-      candles,
-    });
-  } catch (error) {
-    console.error("❌ DERIV CANDLES API ERROR:", error);
-
-    return NextResponse.json(
       {
-        success: false,
-        message:
-          error instanceof Error
-            ? error.message
-            : "Unable to fetch Deriv candles",
-      },
-      { status: 500 }
+        status: 400,
+      }
     );
   }
-}
 
-function getDerivCandles(
-  symbol: string,
-  granularity: number
-) {
-  return new Promise<any[]>((resolve, reject) => {
-    const ws = new WebSocket(DERIV_PUBLIC_WS);
+  return new Promise<Response>((resolve) => {
+    const socket = new WebSocket(
+      DERIV_PUBLIC_WS
+    );
 
-    const timeout = setTimeout(() => {
-      ws.close();
-      reject(new Error("Deriv WebSocket timeout"));
-    }, 10000);
+    let finished = false;
 
-    ws.on("open", () => {
-      console.log(
-        `✅ Connected to Deriv for candles: ${symbol}`
-      );
+    const finish = (
+      response: Response
+    ) => {
+      if (finished) {
+        return;
+      }
 
-      ws.send(
+      finished = true;
+
+      try {
+        socket.close();
+      } catch {}
+
+      resolve(response);
+    };
+
+    socket.on("open", () => {
+      socket.send(
         JSON.stringify({
           ticks_history: symbol,
           count: 100,
@@ -106,64 +87,109 @@ function getDerivCandles(
       );
     });
 
-    ws.on("message", (message) => {
+    socket.on("message", (message) => {
       try {
-        const data = JSON.parse(message.toString());
-
-        console.log(
-          "📩 Deriv candles response:",
-          data.msg_type
+        const data = JSON.parse(
+          message.toString()
         );
 
         if (data.error) {
-          clearTimeout(timeout);
-          ws.close();
-
-          reject(
-            new Error(
-              data.error.message ||
-                "Deriv API returned an error"
+          finish(
+            NextResponse.json(
+              {
+                success: false,
+                message:
+                  data.error.message ||
+                  "Deriv candles request failed",
+              },
+              {
+                status: 500,
+              }
             )
           );
 
           return;
         }
 
-        if (
-          data.req_id === 3 &&
-          data.msg_type === "candles"
-        ) {
-          clearTimeout(timeout);
-          ws.close();
+        if (data.candles) {
+          const candles: DerivCandle[] =
+            data.candles.map(
+              (candle: any) => ({
+                epoch: Number(
+                  candle.epoch
+                ),
+                open: Number(
+                  candle.open
+                ),
+                high: Number(
+                  candle.high
+                ),
+                low: Number(
+                  candle.low
+                ),
+                close: Number(
+                  candle.close
+                ),
+              })
+            );
 
-          const candles = Array.isArray(data.candles)
-            ? data.candles.map((candle: any) => ({
-                epoch: candle.epoch,
-                open: candle.open,
-                high: candle.high,
-                low: candle.low,
-                close: candle.close,
-              }))
-            : [];
-
-          resolve(candles);
+          finish(
+            NextResponse.json({
+              success: true,
+              symbol,
+              granularity,
+              candles,
+            })
+          );
         }
       } catch (error) {
-        clearTimeout(timeout);
-        ws.close();
-        reject(error);
+        finish(
+          NextResponse.json(
+            {
+              success: false,
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "Invalid Deriv candles response",
+            },
+            {
+              status: 500,
+            }
+          )
+        );
       }
     });
 
-    ws.on("error", (error) => {
-      clearTimeout(timeout);
-
-      console.error(
-        " Deriv candles WebSocket error:",
-        error
+    socket.on("error", (error) => {
+      finish(
+        NextResponse.json(
+          {
+            success: false,
+            message:
+              error instanceof Error
+                ? error.message
+                : "Deriv WebSocket error",
+          },
+          {
+            status: 500,
+          }
+        )
       );
-
-      reject(error);
     });
+
+    setTimeout(() => {
+      finish(
+        NextResponse.json(
+          {
+            success: false,
+            message:
+              "Deriv candles request timed out",
+          },
+          {
+            status: 504,
+          }
+        )
+      );
+    }, 15000);
   });
 }
