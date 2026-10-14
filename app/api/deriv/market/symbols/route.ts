@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+
 import { getDerivSymbols } from "@/lib/deriv-market-server";
 
 export const runtime = "nodejs";
@@ -10,7 +11,8 @@ export async function GET() {
     const validSymbols = symbols.filter(
       (symbol) =>
         symbol &&
-        typeof symbol.underlying_symbol === "string"
+        typeof symbol.underlying_symbol ===
+          "string"
     );
 
     return NextResponse.json({
@@ -19,7 +21,10 @@ export async function GET() {
       symbols: validSymbols,
     });
   } catch (error) {
-    console.error("❌ DERIV SYMBOL API ERROR:", error);
+    console.error(
+      "DERIV SYMBOLS API ERROR:",
+      error
+    );
 
     return NextResponse.json(
       {
@@ -29,7 +34,9 @@ export async function GET() {
             ? error.message
             : "Unable to fetch Deriv symbols",
       },
-      { status: 500 }
+      {
+        status: 500,
+      }
     );
   }
 }

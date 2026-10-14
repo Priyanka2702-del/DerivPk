@@ -1,43 +1,30 @@
 import { NextRequest } from "next/server";
+
+import {
+  DERIV_PUBLIC_WS,
+} from "@/lib/deriv-market";
+
 import WebSocket from "ws";
 
 export const runtime = "nodejs";
 
-const DERIV_PUBLIC_WS =
-  "wss://api.derivws.com/trading/v1/options/ws/public";
-
-export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-
-  const symbol = searchParams.get("symbol");
+export async function GET(
+  request: NextRequest
+) {
+  const symbol =
+    request.nextUrl.searchParams.get("symbol");
 
   if (!symbol) {
     return new Response(
       JSON.stringify({
         success: false,
         message: "Symbol is required",
-        example:
-          "/api/deriv/market/stream?symbol=frxEURUSD",
       }),
       {
         status: 400,
         headers: {
-          "Content-Type": "application/json",
-        },
-      }
-    );
-  }
-
-  if (!/^\w{2,30}$/.test(symbol)) {
-    return new Response(
-      JSON.stringify({
-        success: false,
-        message: "Invalid symbol format",
-      }),
-      {
-        status: 400,
-        headers: {
-          "Content-Type": "application/json",
+          "Content-Type":
+            "application/json",
         },
       }
     );
@@ -45,15 +32,38 @@ export async function GET(request: NextRequest) {
 
   const encoder = new TextEncoder();
 
-  let derivWs: WebSocket | null = null;
-  let heartbeat: NodeJS.Timeout | null = null;
+  let derivSocket:
+    | WebSocket
+    | null = null;
+
+  let heartbeat:
+    | ReturnType<typeof setInterval>
+    | null = null;
 
   const stream = new ReadableStream({
     start(controller) {
       let closed = false;
 
-      const closeEverything = () => {
-        if (closed) return;
+      const send = (
+        data: unknown
+      ) => {
+        if (closed) {
+          return;
+        }
+
+        controller.enqueue(
+          encoder.encode(
+            `data: ${JSON.stringify(
+              data
+            )}\n\n`
+          )
+        );
+      };
+
+      const closeStream = () => {
+        if (closed) {
+          return;
+        }
 
         closed = true;
 
@@ -62,11 +72,12 @@ export async function GET(request: NextRequest) {
           heartbeat = null;
         }
 
-        if (derivWs) {
+        if (derivSocket) {
           try {
-            derivWs.close();
+            derivSocket.close();
           } catch {}
-          derivWs = null;
+
+          derivSocket = null;
         }
 
         try {
@@ -74,147 +85,137 @@ export async function GET(request: NextRequest) {
         } catch {}
       };
 
-      const sendEvent = (data: unknown) => {
-        if (closed) return;
+      derivSocket = new WebSocket(
+        DERIV_PUBLIC_WS
+      );
 
-        try {
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify(data)}\n\n`
-            )
-          );
-        } catch {
-          closeEverything();
-        }
-      };
-
-      derivWs = new WebSocket(DERIV_PUBLIC_WS);
-
-      derivWs.on("open", () => {
+      derivSocket.on("open", () => {
         console.log(
-          `✅ Live stream connected: ${symbol}`
+          "DERIV STREAM CONNECTED:",
+          symbol
         );
 
-        derivWs?.send(
+        send({
+          type: "connected",
+          symbol,
+        });
+
+        derivSocket?.send(
           JSON.stringify({
             ticks: [symbol],
             subscribe: 1,
             req_id: 100,
           })
         );
-
-        sendEvent({
-          type: "connected",
-          symbol,
-        });
-
-        heartbeat = setInterval(() => {
-          if (!closed) {
-            try {
-              controller.enqueue(
-                encoder.encode(`: heartbeat\n\n`)
-              );
-            } catch {
-              closeEverything();
-            }
-          }
-        }, 15000);
       });
 
-      derivWs.on("message", (message) => {
+      derivSocket.on("message", (message) => {
         try {
-          const data = JSON.parse(message.toString());
+          const data = JSON.parse(
+            message.toString()
+          );
 
           if (data.error) {
             console.error(
-              "❌ Deriv stream error:",
+              "DERIV STREAM ERROR:",
               data.error
             );
 
-            sendEvent({
+            send({
               type: "error",
               message:
                 data.error.message ||
-                "Deriv API error",
+                "Deriv stream error",
             });
 
-            closeEverything();
             return;
           }
 
-          if (
-            data.msg_type === "tick" &&
-            data.tick
-          ) {
-            sendEvent({
+          if (data.tick) {
+            send({
               type: "tick",
-              symbol: data.tick.symbol,
-              quote: data.tick.quote,
-              epoch: data.tick.epoch,
+              symbol:
+                data.tick.symbol,
+              quote: Number(
+                data.tick.quote
+              ),
+              epoch: Number(
+                data.tick.epoch
+              ),
             });
           }
         } catch (error) {
           console.error(
-            "❌ Stream message parse error:",
+            "DERIV STREAM PARSE ERROR:",
             error
           );
         }
       });
 
-      derivWs.on("error", (error) => {
+      derivSocket.on("error", (error) => {
         console.error(
-          "❌ Deriv live stream WebSocket error:",
+          "DERIV WEBSOCKET ERROR:",
           error
         );
 
-        sendEvent({
+        send({
           type: "error",
-          message: "Deriv WebSocket error",
+          message:
+            error instanceof Error
+              ? error.message
+              : "Deriv WebSocket error",
         });
 
-        closeEverything();
+        closeStream();
       });
 
-      derivWs.on("close", () => {
+      derivSocket.on("close", () => {
         console.log(
-          `🔌 Live stream closed: ${symbol}`
+          "DERIV STREAM CLOSED:",
+          symbol
         );
 
-        closeEverything();
+        closeStream();
       });
+
+      heartbeat = setInterval(() => {
+        send({
+          type: "heartbeat",
+        });
+      }, 15000);
 
       request.signal.addEventListener(
         "abort",
         () => {
           console.log(
-            `🛑 Client disconnected: ${symbol}`
+            "CLIENT CLOSED DERIV STREAM:",
+            symbol
           );
 
-          closeEverything();
-        },
-        { once: true }
+          closeStream();
+        }
       );
     },
 
     cancel() {
       if (heartbeat) {
         clearInterval(heartbeat);
-        heartbeat = null;
       }
 
-      if (derivWs) {
+      if (derivSocket) {
         try {
-          derivWs.close();
+          derivSocket.close();
         } catch {}
-        derivWs = null;
       }
     },
   });
 
   return new Response(stream, {
     headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache, no-transform",
+      "Content-Type":
+        "text/event-stream",
+      "Cache-Control":
+        "no-cache, no-transform",
       Connection: "keep-alive",
       "X-Accel-Buffering": "no",
     },

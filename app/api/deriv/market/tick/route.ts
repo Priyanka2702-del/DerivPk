@@ -1,142 +1,152 @@
 import { NextRequest, NextResponse } from "next/server";
+
+import {
+  DERIV_PUBLIC_WS,
+  DerivTick,
+} from "@/lib/deriv-market";
+
 import WebSocket from "ws";
 
 export const runtime = "nodejs";
 
-const DERIV_PUBLIC_WS =
-  "wss://api.derivws.com/trading/v1/options/ws/public";
-
-export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-
-  const symbol = searchParams.get("symbol");
+export async function GET(
+  request: NextRequest
+) {
+  const symbol =
+    request.nextUrl.searchParams.get("symbol");
 
   if (!symbol) {
     return NextResponse.json(
       {
         success: false,
         message: "Symbol is required",
-        example: "/api/deriv/market/tick?symbol=frxEURUSD",
       },
-      { status: 400 }
-    );
-  }
-
-  if (!/^\w{2,30}$/.test(symbol)) {
-    return NextResponse.json(
       {
-        success: false,
-        message: "Invalid symbol format",
-      },
-      { status: 400 }
+        status: 400,
+      }
     );
   }
 
-  try {
-    const tick = await getDerivTick(symbol);
+  return new Promise<Response>((resolve) => {
+    const socket = new WebSocket(
+      DERIV_PUBLIC_WS
+    );
 
-    return NextResponse.json({
-      success: true,
-      symbol,
-      tick,
+    let finished = false;
+
+    const finish = (
+      response: Response
+    ) => {
+      if (finished) {
+        return;
+      }
+
+      finished = true;
+
+      try {
+        socket.close();
+      } catch {}
+
+      resolve(response);
+    };
+
+    socket.on("open", () => {
+      socket.send(
+        JSON.stringify({
+          ticks: [symbol],
+          subscribe: 1,
+          req_id: 2,
+        })
+      );
     });
-  } catch (error) {
-    console.error("❌ DERIV TICK API ERROR:", error);
 
-    return NextResponse.json(
-      {
-        success: false,
-        message:
-          error instanceof Error
-            ? error.message
-            : "Unable to fetch Deriv tick",
-      },
-      { status: 500 }
-    );
-  }
-}
-
-function getDerivTick(symbol: string) {
-  return new Promise(
-    (resolve, reject) => {
-      const ws = new WebSocket(DERIV_PUBLIC_WS);
-
-      const timeout = setTimeout(() => {
-        ws.close();
-
-        reject(
-          new Error("Deriv WebSocket timeout")
-        );
-      }, 10000);
-
-      ws.on("open", () => {
-        console.log(
-          `✅ Connected to Deriv for tick: ${symbol}`
+    socket.on("message", (message) => {
+      try {
+        const data = JSON.parse(
+          message.toString()
         );
 
-        ws.send(
-          JSON.stringify({
-            ticks: [symbol],
-            subscribe: 1,
-            req_id: 2,
-          })
-        );
-      });
-
-      ws.on("message", (message) => {
-        try {
-          const data = JSON.parse(
-            message.toString()
+        if (data.error) {
+          finish(
+            NextResponse.json(
+              {
+                success: false,
+                message:
+                  data.error.message ||
+                  "Deriv tick request failed",
+              },
+              {
+                status: 500,
+              }
+            )
           );
 
-          if (data.error) {
-            clearTimeout(timeout);
-            ws.close();
-
-            reject(
-              new Error(
-                data.error.message ||
-                  "Deriv API error"
-              )
-            );
-
-            return;
-          }
-
-          if (
-            data.msg_type === "tick" &&
-            data.tick
-          ) {
-            clearTimeout(timeout);
-
-            const result = {
-              symbol: data.tick.symbol,
-              quote: data.tick.quote,
-              epoch: data.tick.epoch,
-            };
-
-            ws.close();
-
-            resolve(result);
-          }
-        } catch (error) {
-          clearTimeout(timeout);
-          ws.close();
-
-          reject(error);
+          return;
         }
-      });
 
-      ws.on("error", (error) => {
-        clearTimeout(timeout);
+        if (data.tick) {
+          const tick: DerivTick = {
+            symbol: data.tick.symbol,
+            quote: Number(data.tick.quote),
+            epoch: Number(data.tick.epoch),
+          };
 
-        console.error(
-          "❌ Deriv tick WebSocket error:",
-          error
+          finish(
+            NextResponse.json({
+              success: true,
+              symbol,
+              tick,
+            })
+          );
+        }
+      } catch (error) {
+        finish(
+          NextResponse.json(
+            {
+              success: false,
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "Invalid Deriv response",
+            },
+            {
+              status: 500,
+            }
+          )
         );
+      }
+    });
 
-        reject(error);
-      });
-    }
-  );
+    socket.on("error", (error) => {
+      finish(
+        NextResponse.json(
+          {
+            success: false,
+            message:
+              error instanceof Error
+                ? error.message
+                : "Deriv WebSocket error",
+          },
+          {
+            status: 500,
+          }
+        )
+      );
+    });
+
+    setTimeout(() => {
+      finish(
+        NextResponse.json(
+          {
+            success: false,
+            message:
+              "Deriv tick request timed out",
+          },
+          {
+            status: 504,
+          }
+        )
+      );
+    }, 15000);
+  });
 }

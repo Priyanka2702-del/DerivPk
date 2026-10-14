@@ -1,21 +1,34 @@
 import WebSocket from "ws";
 
-const DERIV_PUBLIC_WS =
-  "wss://api.derivws.com/trading/v1/options/ws/public";
+import {
+  DERIV_PUBLIC_WS,
+  DerivSymbol,
+} from "@/lib/deriv-market";
 
-export async function getDerivSymbols() {
-  return new Promise<any[]>((resolve, reject) => {
-    const ws = new WebSocket(DERIV_PUBLIC_WS);
+export async function getDerivSymbols(): Promise<DerivSymbol[]> {
+  return new Promise((resolve, reject) => {
+    const socket = new WebSocket(DERIV_PUBLIC_WS);
 
-    const timeout = setTimeout(() => {
-      ws.close();
-      reject(new Error("Deriv WebSocket timeout"));
-    }, 10000);
+    let finished = false;
 
-    ws.on("open", () => {
-      console.log("✅ Server connected to Deriv WebSocket");
+    const finish = (
+      callback: () => void
+    ) => {
+      if (finished) {
+        return;
+      }
 
-      ws.send(
+      finished = true;
+
+      try {
+        socket.close();
+      } catch {}
+
+      callback();
+    };
+
+    socket.on("open", () => {
+      socket.send(
         JSON.stringify({
           active_symbols: "brief",
           req_id: 1,
@@ -23,52 +36,53 @@ export async function getDerivSymbols() {
       );
     });
 
-    ws.on("message", (message) => {
+    socket.on("message", (message) => {
       try {
-        const data = JSON.parse(message.toString());
-
-        console.log("📩 Deriv response:", data.msg_type);
+        const data = JSON.parse(
+          message.toString()
+        );
 
         if (data.error) {
-          clearTimeout(timeout);
-          ws.close();
-
-          reject(
-            new Error(
-              data.error.message || "Deriv API returned an error"
-            )
-          );
+          finish(() => {
+            reject(
+              new Error(
+                data.error.message ||
+                  "Deriv symbols request failed"
+              )
+            );
+          });
 
           return;
         }
 
-        if (
-          data.req_id === 1 &&
-          data.msg_type === "active_symbols"
-        ) {
-          clearTimeout(timeout);
-          ws.close();
-
-          resolve(
-            Array.isArray(data.active_symbols)
-              ? data.active_symbols
-              : []
-          );
+        if (Array.isArray(data.active_symbols)) {
+          finish(() => {
+            resolve(
+              data.active_symbols as DerivSymbol[]
+            );
+          });
         }
       } catch (error) {
-        clearTimeout(timeout);
-        ws.close();
-
-        reject(error);
+        finish(() => {
+          reject(error);
+        });
       }
     });
 
-    ws.on("error", (error) => {
-      clearTimeout(timeout);
-
-      console.error("❌ Deriv Server WebSocket Error:", error);
-
-      reject(error);
+    socket.on("error", (error) => {
+      finish(() => {
+        reject(error);
+      });
     });
+
+    setTimeout(() => {
+      finish(() => {
+        reject(
+          new Error(
+            "Deriv symbols request timed out"
+          )
+        );
+      });
+    }, 15000);
   });
 }
