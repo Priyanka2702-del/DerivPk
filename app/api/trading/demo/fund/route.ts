@@ -41,9 +41,19 @@ function accountResponse(account: AlpacaAccount) {
   };
 }
 
+function journalResponse(journal: AlpacaJournal) {
+  return {
+    id: journal.id,
+    status: journal.status,
+    amount: journal.amount,
+    currency: journal.currency || "USD",
+    createdAt: journal.created_at,
+  };
+}
+
 /**
- * Check the status of an existing funding journal.
- * Does not create a new funding request.
+ * Check an existing journal.
+ * This endpoint never creates a funding journal.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -59,10 +69,7 @@ export async function GET(request: NextRequest) {
     const journalId = new URL(request.url)
       .searchParams.get("journalId");
 
-    if (
-      !journalId ||
-      !/^[0-9a-f-]{36}$/i.test(journalId)
-    ) {
+    if (!journalId || !/^[0-9a-f-]{36}$/i.test(journalId)) {
       return NextResponse.json(
         {
           success: false,
@@ -94,12 +101,7 @@ export async function GET(request: NextRequest) {
       `/v1/journals/${encodeURIComponent(journalId)}`
     );
 
-    // Only disclose the status if this journal targets
-    // the currently logged-in user's paper account.
-    if (
-      journal.to_account !==
-      tradingAccount.providerAccountId
-    ) {
+    if (journal.to_account !== tradingAccount.providerAccountId) {
       return NextResponse.json(
         {
           success: false,
@@ -110,15 +112,26 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    const status = String(journal.status || "").toLowerCase();
+    const fundingComplete = status === "executed";
+    const fundingFailed = [
+      "canceled",
+      "cancelled",
+      "deleted",
+      "rejected",
+      "refused",
+    ].includes(status);
+
     return NextResponse.json({
       success: true,
-      journal: {
-        id: journal.id,
-        status: journal.status,
-        amount: journal.amount,
-        currency: journal.currency || "USD",
-        createdAt: journal.created_at,
-      },
+      fundingComplete,
+      fundingFailed,
+      message: fundingComplete
+        ? "Funding journal executed. Check your account balance."
+        : fundingFailed
+          ? `Funding was not completed. Journal status: ${status}.`
+          : `Journal status: ${status || "unknown"}. Funding is not confirmed yet.`,
+      journal: journalResponse(journal),
     });
   } catch (error) {
     const message =
@@ -148,10 +161,7 @@ export async function POST(request: NextRequest) {
 
     if (!user) {
       return NextResponse.json(
-        {
-          success: false,
-          message: "Unauthorized.",
-        },
+        { success: false, message: "Unauthorized." },
         { status: 401 }
       );
     }
@@ -187,15 +197,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const roundedAmount =
-      Math.round(amount * 100) / 100;
+    const roundedAmount = Math.round(amount * 100) / 100;
 
     if (roundedAmount < 0.01) {
       return NextResponse.json(
         {
           success: false,
-          message:
-            "Funding amount must be at least $0.01.",
+          message: "Funding amount must be at least $0.01.",
         },
         { status: 400 }
       );
@@ -248,10 +256,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (
-      account.account_blocked ||
-      account.transfers_blocked
-    ) {
+    if (account.account_blocked || account.transfers_blocked) {
       return NextResponse.json(
         {
           success: false,
@@ -268,33 +273,58 @@ export async function POST(request: NextRequest) {
       amount: roundedAmount,
     });
 
-    const updatedAccount =
-      await alpacaRequest<AlpacaAccount>(
-        `/v1/trading/accounts/${encodeURIComponent(
-          tradingAccount.providerAccountId
-        )}/account`
-      );
+    const status = String(funding.status || "").toLowerCase();
+
+    const fundingComplete = status === "executed";
+
+    const fundingPending = [
+      "pending",
+      "queued",
+      "sent_to_clearing",
+    ].includes(status);
+
+    const fundingFailed = [
+      "canceled",
+      "cancelled",
+      "deleted",
+      "rejected",
+      "refused",
+    ].includes(status);
+
+    const knownStatus =
+      fundingComplete || fundingPending || fundingFailed;
+
+    // Fetch the latest account snapshot. A newly submitted journal
+    // may take time to affect the balance.
+    const updatedAccount = await alpacaRequest<AlpacaAccount>(
+      `/v1/trading/accounts/${encodeURIComponent(
+        tradingAccount.providerAccountId
+      )}/account`
+    );
 
     const balance = accountResponse(updatedAccount);
 
-    return NextResponse.json(
-      {
-        success: true,
-        message:
-          "Sandbox funding journal submitted. Check its status before submitting another request.",
-        funding: {
-          id: funding.id,
-          status: funding.status,
-          amount: funding.amount,
-          currency: funding.currency || "USD",
-          createdAt: funding.created_at,
-        },
-        balanceUpdated:
-          balance.cash > Number(account.cash),
-        account: balance,
-      },
-      { status: 200 }
-    );
+    const responseBody = {
+      // success means the request was handled, not necessarily funded.
+      success: !fundingFailed,
+      fundingComplete,
+      fundingPending,
+      message: fundingComplete
+        ? "Funding journal executed. Check the account balance to confirm the credit."
+        : fundingPending
+          ? "Funding request is pending. Do not submit it again; check the journal status later."
+          : fundingFailed
+            ? `Funding was not completed. Journal status: ${status}.`
+            : `Unrecognized journal status: ${status || "unknown"}. Verify it before taking further action.`,
+      funding: journalResponse(funding),
+      balanceUpdated:
+        fundingComplete && balance.cash > Number(account.cash),
+      account: balance,
+    };
+
+    return NextResponse.json(responseBody, {
+      status: fundingFailed ? 409 : fundingPending ? 202 : 200,
+    });
   } catch (error) {
     const message =
       error instanceof Error
