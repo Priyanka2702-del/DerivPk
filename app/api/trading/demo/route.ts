@@ -2,10 +2,9 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { requireAuth } from "@/lib/session";
-import {connectDB} from "@/lib/db";
+import { connectDB } from "@/lib/db";
 import TradingAccount from "@/models/TradingAccount";
 import { alpacaRequest } from "@/lib/alpaca/broker";
-
 
 type OrderSide = "buy" | "sell";
 type OrderType = "market" | "limit";
@@ -16,26 +15,20 @@ type AlpacaAccount = {
   account_number?: string;
   status?: string;
   currency?: string;
-
   cash?: string | number;
   buying_power?: string | number;
   equity?: string | number;
   last_equity?: string | number;
-
   portfolio_value?: string | number;
-
   trading_blocked?: boolean;
   account_blocked?: boolean;
   transfers_blocked?: boolean;
-
   pattern_day_trader?: boolean;
   daytrade_count?: number;
-
   multiplier?: string | number;
   initial_margin?: string | number;
   maintenance_margin?: string | number;
   last_maintenance_margin?: string | number;
-
   created_at?: string;
   updated_at?: string;
 };
@@ -44,12 +37,10 @@ type AlpacaPosition = {
   symbol: string;
   qty: string;
   side?: string;
-
   market_value?: string;
   cost_basis?: string;
   unrealized_pl?: string;
   unrealized_plpc?: string;
-
   current_price?: string;
   avg_entry_price?: string;
 };
@@ -62,6 +53,7 @@ type AlpacaOrder = {
   type: string;
   time_in_force: string;
   qty?: string;
+  notional?: string;
   filled_qty?: string;
   filled_avg_price?: string | null;
   status: string;
@@ -82,56 +74,32 @@ function normalizeSymbol(value: unknown): string {
 }
 
 function getErrorMessage(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
-  }
-
-  if (typeof error === "string") {
-    return error;
-  }
-
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
   return "Unknown trading error";
 }
 
 function getStatusFromAlpacaError(message: string): number {
-  if (message.includes("404")) {
-    return 404;
-  }
+  const lower = message.toLowerCase();
 
-  if (
-    message.includes("409") ||
-    message.toLowerCase().includes("conflict")
-  ) {
-    return 409;
-  }
-
+  if (message.includes("404")) return 404;
+  if (message.includes("409") || lower.includes("conflict")) return 409;
   if (
     message.includes("422") ||
-    message.toLowerCase().includes("unprocessable")
-  ) {
-    return 422;
-  }
-
+    lower.includes("unprocessable")
+  ) return 422;
   if (
     message.includes("403") ||
-    message.toLowerCase().includes("forbidden")
-  ) {
-    return 403;
-  }
-
+    lower.includes("forbidden")
+  ) return 403;
   if (
     message.includes("401") ||
-    message.toLowerCase().includes("unauthorized")
-  ) {
-    return 401;
-  }
-
+    lower.includes("unauthorized")
+  ) return 401;
   if (
     message.includes("400") ||
-    message.toLowerCase().includes("bad request")
-  ) {
-    return 400;
-  }
+    lower.includes("bad request")
+  ) return 400;
 
   return 502;
 }
@@ -146,21 +114,16 @@ function buildAccountDiagnostics(account: AlpacaAccount) {
   return {
     id: account.id,
     accountNumber: account.account_number ?? null,
-
     status: account.status ?? null,
     currency: account.currency ?? "USD",
-
     cash,
     equity,
     buyingPower,
-
     tradingBlocked: Boolean(account.trading_blocked),
     accountBlocked: Boolean(account.account_blocked),
     transfersBlocked: Boolean(account.transfers_blocked),
-
     patternDayTrader: Boolean(account.pattern_day_trader),
     daytradeCount: account.daytrade_count ?? 0,
-
     multiplier: account.multiplier ?? null,
 
     canTrade:
@@ -170,28 +133,21 @@ function buildAccountDiagnostics(account: AlpacaAccount) {
 
     hasBuyingPower: buyingPower > 0,
 
-    warning:
-      account.account_blocked
-        ? "This account is blocked."
-        : account.trading_blocked
-          ? "Trading is blocked on this account."
-          : account.status !== "ACTIVE"
-            ? `Account status is ${account.status ?? "unknown"}.`
-            : buyingPower <= 0
-              ? "Account has no buying power. Buy orders will fail until the paper account has simulated buying power."
-              : null,
+    warning: account.account_blocked
+      ? "This account is blocked."
+      : account.trading_blocked
+        ? "Trading is blocked on this account."
+        : account.status !== "ACTIVE"
+          ? `Account status is ${account.status ?? "unknown"}.`
+          : buyingPower <= 0
+            ? "Account has no buying power."
+            : null,
   };
 }
 
 /**
  * GET
- *
- * Returns:
- * - account diagnostics
- * - positions
- * - orders
- *
- * This endpoint is intentionally read-only.
+ * Returns the authenticated user's own paper account, positions and orders.
  */
 export async function GET() {
   try {
@@ -199,10 +155,7 @@ export async function GET() {
 
     if (!user) {
       return NextResponse.json(
-        {
-          success: false,
-          message: "Unauthorized",
-        },
+        { success: false, message: "Unauthorized" },
         { status: 401 }
       );
     }
@@ -233,11 +186,9 @@ export async function GET() {
         alpacaRequest<AlpacaAccount>(
           `/v1/trading/accounts/${providerAccountId}/account`
         ),
-
         alpacaRequest<AlpacaPosition[]>(
           `/v1/trading/accounts/${providerAccountId}/positions`
         ),
-
         alpacaRequest<AlpacaOrder[]>(
           `/v1/trading/accounts/${providerAccountId}/orders?status=all&limit=50&direction=desc`
         ),
@@ -247,13 +198,11 @@ export async function GET() {
 
       return NextResponse.json({
         success: true,
-
         account: {
           id: account.id,
           accountNumber: account.account_number ?? null,
           status: account.status ?? null,
           currency: account.currency ?? "USD",
-
           cash: toNumber(account.cash),
           equity: toNumber(
             account.equity ??
@@ -262,13 +211,9 @@ export async function GET() {
           ),
           buyingPower: toNumber(account.buying_power),
         },
-
         accountDiagnostics: diagnostics,
-
         positions: Array.isArray(positions) ? positions : [],
-
         orders: Array.isArray(orders) ? orders : [],
-
         localAccount: {
           id: String(tradingAccount._id),
           accountType: tradingAccount.accountType,
@@ -277,24 +222,13 @@ export async function GET() {
           status: tradingAccount.status,
         },
       });
-   
-} catch (error) {
-  const err = error as Error & {
-    cause?: {
-      code?: string;
-      message?: string;
-    };
-  };
+    } catch (error) {
+      const message = getErrorMessage(error);
 
-  const message = getErrorMessage(error);
-
-  console.error("DEMO ACCOUNT FETCH DIAGNOSTICS:", {
-    name: err.name,
-    message: err.message,
-    causeCode: err.cause?.code,
-    causeMessage: err.cause?.message,
-  });
-
+      console.error("DEMO ACCOUNT FETCH DIAGNOSTICS:", {
+        message,
+        providerAccountId,
+      });
 
       return NextResponse.json(
         {
@@ -303,9 +237,7 @@ export async function GET() {
           error: message,
           code: "ALPACA_ACCOUNT_FETCH_FAILED",
         },
-        {
-          status: getStatusFromAlpacaError(message),
-        }
+        { status: getStatusFromAlpacaError(message) }
       );
     }
   } catch (error) {
@@ -327,8 +259,10 @@ export async function GET() {
 
 /**
  * POST
- *
- * Creates a paper Buy/Sell order.
+ * Supports:
+ * - Market orders by dollar amount: { notional: "25.00" }
+ * - Orders by share quantity: { qty: "1" }
+ * - Limit orders by quantity and limitPrice
  */
 export async function POST(request: NextRequest) {
   try {
@@ -336,10 +270,7 @@ export async function POST(request: NextRequest) {
 
     if (!user) {
       return NextResponse.json(
-        {
-          success: false,
-          message: "Unauthorized",
-        },
+        { success: false, message: "Unauthorized" },
         { status: 401 }
       );
     }
@@ -350,6 +281,7 @@ export async function POST(request: NextRequest) {
       type?: OrderType;
       timeInForce?: TimeInForce;
       qty?: number | string;
+      notional?: number | string;
       limitPrice?: number | string;
     };
 
@@ -369,25 +301,30 @@ export async function POST(request: NextRequest) {
     const symbol = normalizeSymbol(body.symbol);
     const side = body.side;
     const type = body.type;
-    const timeInForce = body.timeInForce;
+    const timeInForce = body.timeInForce ?? "day";
 
-    const qty = toNumber(body.qty);
+    const hasNotional =
+      body.notional !== undefined &&
+      body.notional !== null &&
+      body.notional !== "";
+
+    const amount = hasNotional ? Number(body.notional) : undefined;
+    const qty = hasNotional ? undefined : Number(body.qty);
+
     const limitPrice =
       body.limitPrice === undefined ||
       body.limitPrice === null ||
       body.limitPrice === ""
         ? undefined
-        : toNumber(body.limitPrice);
+        : Number(body.limitPrice);
 
-    /**
-     * Basic validation
-     */
-    if (!symbol) {
+    // Basic request validation
+    if (!/^[A-Z][A-Z0-9.-]{0,19}$/.test(symbol)) {
       return NextResponse.json(
         {
           success: false,
-          message: "Symbol is required.",
-          code: "SYMBOL_REQUIRED",
+          message: "Enter a valid stock symbol.",
+          code: "INVALID_SYMBOL",
         },
         { status: 400 }
       );
@@ -426,7 +363,36 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!Number.isFinite(qty) || qty <= 0) {
+    // Dollar-amount orders are market/day orders only.
+    if (hasNotional && (type !== "market" || timeInForce !== "day")) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Dollar-amount orders are supported for market orders with day time-in-force only.",
+          code: "NOTIONAL_ORDER_NOT_SUPPORTED",
+        },
+        { status: 400 }
+      );
+    }
+
+    if (hasNotional) {
+      if (
+        !Number.isFinite(amount) ||
+        amount! < 1 ||
+        Math.abs(amount! * 100 - Math.round(amount! * 100)) > 1e-7
+      ) {
+        return NextResponse.json(
+          {
+            success: false,
+            message:
+              "Order amount must be at least $1.00 and have at most two decimal places.",
+            code: "INVALID_NOTIONAL",
+          },
+          { status: 400 }
+        );
+      }
+    } else if (!Number.isFinite(qty) || qty! <= 0) {
       return NextResponse.json(
         {
           success: false,
@@ -439,7 +405,7 @@ export async function POST(request: NextRequest) {
 
     if (
       type === "limit" &&
-      (!Number.isFinite(limitPrice) || Number(limitPrice) <= 0)
+      (!Number.isFinite(limitPrice) || limitPrice! <= 0)
     ) {
       return NextResponse.json(
         {
@@ -453,6 +419,7 @@ export async function POST(request: NextRequest) {
 
     await connectDB();
 
+    // Always resolve the account from the authenticated user's database record.
     const tradingAccount = await TradingAccount.findOne({
       userId: user.id,
       provider: "alpaca",
@@ -472,12 +439,6 @@ export async function POST(request: NextRequest) {
 
     const providerAccountId = tradingAccount.providerAccountId;
 
-    /**
-     * Always fetch the latest account before submitting an order.
-     *
-     * This prevents us from showing an order form when the actual
-     * Alpaca account is blocked or has zero buying power.
-     */
     let account: AlpacaAccount;
 
     try {
@@ -500,37 +461,22 @@ export async function POST(request: NextRequest) {
           error: message,
           code: "ACCOUNT_DIAGNOSTIC_FAILED",
         },
-        {
-          status: getStatusFromAlpacaError(message),
-        }
+        { status: getStatusFromAlpacaError(message) }
       );
     }
 
     const diagnostics = buildAccountDiagnostics(account);
 
-    /**
-     * Account-level checks
-     */
-    if (account.account_blocked) {
+    if (account.account_blocked || account.trading_blocked) {
       return NextResponse.json(
         {
           success: false,
-          message:
-            "This paper account is blocked. Trading orders cannot be submitted.",
-          code: "ACCOUNT_BLOCKED",
-          accountDiagnostics: diagnostics,
-        },
-        { status: 409 }
-      );
-    }
-
-    if (account.trading_blocked) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Trading is currently blocked on this paper account.",
-          code: "TRADING_BLOCKED",
+          message: account.account_blocked
+            ? "This paper account is blocked."
+            : "Trading is blocked on this paper account.",
+          code: account.account_blocked
+            ? "ACCOUNT_BLOCKED"
+            : "TRADING_BLOCKED",
           accountDiagnostics: diagnostics,
         },
         { status: 409 }
@@ -551,76 +497,72 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    /**
-     * BUY validation
-     *
-     * We don't know the exact market price here, so this is only
-     * a basic account-level check. Alpaca remains the final authority.
-     */
-    if (side === "buy" && diagnostics.buyingPower <= 0) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Buy order cannot be submitted because this paper account has $0 buying power.",
-          code: "INSUFFICIENT_BUYING_POWER",
-          accountDiagnostics: diagnostics,
-          hint:
-            "The paper account must have simulated buying power before a Buy order can execute.",
-        },
-        { status: 409 }
-      );
+    // BUY checks: compare dollar amount or limit order's estimated cost.
+    if (side === "buy") {
+      if (diagnostics.buyingPower <= 0) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: "Your demo account has no available buying power.",
+            code: "INSUFFICIENT_BUYING_POWER",
+            accountDiagnostics: diagnostics,
+          },
+          { status: 409 }
+        );
+      }
+
+      if (hasNotional && amount! > diagnostics.buyingPower) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: `Order amount ${amount!.toFixed(
+              2
+            )} USD exceeds your available buying power of ${diagnostics.buyingPower.toFixed(
+              2
+            )} USD.`,
+            code: "INSUFFICIENT_BUYING_POWER",
+            availableBuyingPower: diagnostics.buyingPower,
+            requestedAmount: amount,
+            accountDiagnostics: diagnostics,
+          },
+          { status: 409 }
+        );
+      }
+
+      if (
+        !hasNotional &&
+        type === "limit" &&
+        qty! * limitPrice! > diagnostics.buyingPower
+      ) {
+        return NextResponse.json(
+          {
+            success: false,
+            message:
+              "The estimated limit order cost exceeds your available buying power.",
+            code: "INSUFFICIENT_BUYING_POWER",
+            availableBuyingPower: diagnostics.buyingPower,
+            estimatedOrderCost: qty! * limitPrice!,
+            accountDiagnostics: diagnostics,
+          },
+          { status: 409 }
+        );
+      }
     }
 
-    /**
-     * SELL validation
-     *
-     * Verify that the requested position exists and has enough quantity.
-     */
+    // SELL checks: verify that this account owns the position.
     if (side === "sell") {
+      let position: AlpacaPosition | undefined;
+
       try {
         const positions = await alpacaRequest<AlpacaPosition[]>(
           `/v1/trading/accounts/${providerAccountId}/positions`
         );
 
-        const position = Array.isArray(positions)
+        position = Array.isArray(positions)
           ? positions.find(
-              (item) =>
-                normalizeSymbol(item.symbol) === symbol
+              (item) => normalizeSymbol(item.symbol) === symbol
             )
-          : null;
-
-        if (!position) {
-          return NextResponse.json(
-            {
-              success: false,
-              message: `You do not currently hold a ${symbol} position.`,
-              code: "POSITION_NOT_FOUND",
-              symbol,
-              accountDiagnostics: diagnostics,
-            },
-            { status: 409 }
-          );
-        }
-
-        const availableQty = Math.abs(
-          toNumber(position.qty)
-        );
-
-        if (qty > availableQty) {
-          return NextResponse.json(
-            {
-              success: false,
-              message: `Cannot sell ${qty} shares of ${symbol}. You only have ${availableQty} shares.`,
-              code: "INSUFFICIENT_POSITION",
-              symbol,
-              requestedQuantity: qty,
-              availableQuantity: availableQty,
-              accountDiagnostics: diagnostics,
-            },
-            { status: 409 }
-          );
-        }
+          : undefined;
       } catch (error) {
         const message = getErrorMessage(error);
 
@@ -634,31 +576,88 @@ export async function POST(request: NextRequest) {
         return NextResponse.json(
           {
             success: false,
-            message: "Unable to verify the existing position.",
+            message: "Unable to verify your existing position.",
             error: message,
             code: "POSITION_CHECK_FAILED",
-            accountDiagnostics: diagnostics,
           },
+          { status: getStatusFromAlpacaError(message) }
+        );
+      }
+
+      if (!position) {
+        return NextResponse.json(
           {
-            status: getStatusFromAlpacaError(message),
-          }
+            success: false,
+            message: `You do not currently hold a ${symbol} position.`,
+            code: "POSITION_NOT_FOUND",
+          },
+          { status: 409 }
+        );
+      }
+
+      if (String(position.side ?? "").toLowerCase() === "short") {
+        return NextResponse.json(
+          {
+            success: false,
+            message:
+              "This is a short position. Use the appropriate position-closing action instead.",
+            code: "SHORT_POSITION_NOT_SELLABLE",
+          },
+          { status: 409 }
+        );
+      }
+
+      const availableQty = Math.max(0, toNumber(position.qty));
+      const positionValue = Math.abs(
+        toNumber(position.market_value) ||
+          availableQty * toNumber(position.current_price)
+      );
+
+      if (!hasNotional && qty! > availableQty) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: `You requested ${qty} shares, but only ${availableQty} shares of ${symbol} are available.`,
+            code: "INSUFFICIENT_POSITION",
+            requestedQuantity: qty,
+            availableQuantity: availableQty,
+          },
+          { status: 409 }
+        );
+      }
+
+      if (hasNotional && amount! > positionValue) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: `The requested sell amount exceeds the current estimated market value of your ${symbol} position (${positionValue.toFixed(
+              2
+            )} USD).`,
+            code: "INSUFFICIENT_POSITION_VALUE",
+            requestedAmount: amount,
+            availablePositionValue: positionValue,
+          },
+          { status: 409 }
         );
       }
     }
 
-    /**
-     * Build Alpaca order payload
-     */
+    // Alpaca accepts either qty or notional; never send both.
     const orderPayload: Record<string, unknown> = {
       symbol,
-      qty: String(qty),
       side,
       type,
       time_in_force: timeInForce,
     };
 
+    if (hasNotional) {
+      orderPayload.notional = amount!.toFixed(2);
+    } else {
+      orderPayload.qty = String(qty);
+    }
+
     if (type === "limit") {
-      orderPayload.limit_price = String(limitPrice);
+      orderPayload.limit_price = limitPrice!.toFixed(2);
     }
 
     console.log("CREATING PAPER ORDER:", {
@@ -668,17 +667,8 @@ export async function POST(request: NextRequest) {
       side,
       type,
       timeInForce,
-      qty,
-      limitPrice: type === "limit" ? limitPrice : undefined,
-
-      accountDiagnostics: {
-        status: diagnostics.status,
-        cash: diagnostics.cash,
-        equity: diagnostics.equity,
-        buyingPower: diagnostics.buyingPower,
-        tradingBlocked: diagnostics.tradingBlocked,
-        accountBlocked: diagnostics.accountBlocked,
-      },
+      notional: hasNotional ? amount : undefined,
+      qty: hasNotional ? undefined : qty,
     });
 
     try {
@@ -686,6 +676,9 @@ export async function POST(request: NextRequest) {
         `/v1/trading/accounts/${providerAccountId}/orders`,
         {
           method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
           body: JSON.stringify(orderPayload),
         }
       );
@@ -694,15 +687,14 @@ export async function POST(request: NextRequest) {
         {
           success: true,
           message: `${side.toUpperCase()} order submitted successfully.`,
-
           order,
-
           accountDiagnostics: diagnostics,
         },
         { status: 201 }
       );
     } catch (error) {
       const message = getErrorMessage(error);
+      const lowerMessage = message.toLowerCase();
 
       console.error("DEMO ORDER CREATION ERROR:", {
         userId: user.id,
@@ -710,25 +702,20 @@ export async function POST(request: NextRequest) {
         symbol,
         side,
         type,
-        qty,
-        limitPrice,
+        notional: hasNotional ? amount : undefined,
+        qty: hasNotional ? undefined : qty,
         message,
       });
 
-      /**
-       * Convert common Alpaca errors into user-friendly messages.
-       */
       let userMessage = "Paper order could not be submitted.";
       let code = "ORDER_SUBMISSION_FAILED";
-
-      const lowerMessage = message.toLowerCase();
 
       if (
         lowerMessage.includes("buying power") ||
         lowerMessage.includes("insufficient")
       ) {
         userMessage =
-          "Order rejected because the paper account does not have enough buying power.";
+          "Order rejected because the paper account does not have enough buying power or available position value.";
         code = "INSUFFICIENT_BUYING_POWER";
       } else if (
         lowerMessage.includes("position") &&
@@ -737,24 +724,17 @@ export async function POST(request: NextRequest) {
         userMessage =
           "Sell order rejected because the requested position or quantity is not available.";
         code = "SELL_POSITION_ERROR";
-      } else if (
-        lowerMessage.includes("trading blocked")
-      ) {
-        userMessage =
-          "Trading is blocked on this paper account.";
+      } else if (lowerMessage.includes("trading blocked")) {
+        userMessage = "Trading is blocked on this paper account.";
         code = "TRADING_BLOCKED";
-      } else if (
-        lowerMessage.includes("account blocked")
-      ) {
-        userMessage =
-          "This paper account is blocked.";
+      } else if (lowerMessage.includes("account blocked")) {
+        userMessage = "This paper account is blocked.";
         code = "ACCOUNT_BLOCKED";
       } else if (
         lowerMessage.includes("market") &&
         lowerMessage.includes("closed")
       ) {
-        userMessage =
-          "The market is currently closed for this order.";
+        userMessage = "The market is currently closed for this order.";
         code = "MARKET_CLOSED";
       }
 
@@ -764,17 +744,14 @@ export async function POST(request: NextRequest) {
           message: userMessage,
           error: message,
           code,
-
           symbol,
           side,
           type,
-          qty,
-
+          notional: hasNotional ? amount : undefined,
+          qty: hasNotional ? undefined : qty,
           accountDiagnostics: diagnostics,
         },
-        {
-          status: getStatusFromAlpacaError(message),
-        }
+        { status: getStatusFromAlpacaError(message) }
       );
     }
   } catch (error) {
