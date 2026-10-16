@@ -1,0 +1,92 @@
+﻿D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\api\trading\accounts\route.ts:144  return "Trading account creation failed";
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\api\trading\accounts\route.ts:277  "GET TRADING ACCOUNTS ERROR:",
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\api\trading\accounts\route.ts:392  message: `You already have a ${requestedAccountType} trading account.`,
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\api\trading\accounts\route.ts:553  "Tax ID is required to create a trading account.",
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\api\trading\accounts\route.ts:564  "Tax ID type is required to create a trading account.",
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\api\trading\accounts\route.ts:734  "You must accept the required agreements before creating a trading account.",
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\api\trading\accounts\route.ts:898  "Trading account created successfully.",
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\api\trading\accounts\route.ts:948  "CREATE TRADING ACCOUNT ERROR:",
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\api\trading\demo\route.ts:143  ? "Account has no buying power."
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\api\trading\demo\route.ts:175  message: "Paper trading account not found.",
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\api\trading\demo\route.ts:236  message: "Unable to fetch paper trading account.",
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\api\trading\demo\route.ts:433  message: "Paper trading account not found.",
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\api\trading\demo\route.ts:460  message: "Unable to verify the paper trading account.",
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\api\trading\demo\route.ts:490  message: `Trading account is not active. Current status: ${
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\api\trading\demo\route.ts:506  message: "Your demo account has no available buying power.",
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\api\trading\demo\route.ts:520  )} USD exceeds your available buying power of ${diagnostics.buyingPower.toFixed(
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\api\trading\demo\route.ts:541  "The estimated limit order cost exceeds your available buying power.",
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\api\trading\demo\route.ts:714  lowerMessage.includes("buying power") ||
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\api\trading\demo\route.ts:718  "Order rejected because the paper account does not have enough buying power or available position value.";
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\api\trading\demo\fund\route.ts:94  message: "Paper trading account not found.",
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\api\trading\demo\fund\route.ts:224  message: "Paper trading account not found.",
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\api\trading\demo\positions\[symbol]\route.ts:34  { message: "Paper trading account not found" },
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\api\trading\real\route.ts:48  : "Unable to load real trading account";
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\api\trading\real\route.ts:77  message: "No real trading account found",
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\dashboard\accounts\page.tsx:11  // //           <p className="text-sm text-text-muted">Your trading accounts and balances.</p>
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\dashboard\accounts\page.tsx:130  //           throw new Error(data?.error || "Failed to load trading accounts");
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\dashboard\accounts\page.tsx:139  //             : "Failed to load trading accounts"
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\dashboard\accounts\page.tsx:216  //             Your trading accounts and balances.
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\dashboard\accounts\page.tsx:233  //             Loading your trading accounts...
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\dashboard\accounts\page.tsx:251  //             No trading account found
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\dashboard\accounts\page.tsx:255  //             Create your first trading account to start trading.
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\dashboard\accounts\page.tsx:268  //       {/* Real Accounts */}
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\dashboard\accounts\page.tsx:402  console.log("TRADING ACCOUNTS API:", {
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\dashboard\accounts\page.tsx:416  `Trading accounts API returned invalid JSON. HTTP ${response.status}. Response: ${rawText.slice(
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\dashboard\accounts\page.tsx:428  `Failed to load trading accounts. HTTP ${response.status}`
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\dashboard\accounts\page.tsx:434  "Trading accounts API returned an empty response."
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\dashboard\accounts\page.tsx:445  : "Failed to load trading accounts"
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\dashboard\accounts\page.tsx:529  Your trading accounts and balances.
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\dashboard\accounts\page.tsx:545  Loading your trading accounts...
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\dashboard\accounts\page.tsx:553  Failed to load trading accounts
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\dashboard\accounts\page.tsx:565  No trading account found
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\dashboard\accounts\page.tsx:569  Create your first trading account to start trading.
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\dashboard\assets\page.tsx:24  label: "Trading Account",
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\dashboard\live-trading\page.tsx:68  Select Demo Account or Real Account from the trading terminal.
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\dashboard\mt5\page.tsx:52  "Unable to load trading accounts."
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\dashboard\mt5\page.tsx:66  : "Unable to load trading accounts."
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\dashboard\mt5\page.tsx:160  trading account.
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\dashboard\mt5\page.tsx:263  {/* REAL ACCOUNT */}
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\dashboard\mt5\page.tsx:272  Real Account
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\dashboard\mt5\page.tsx:354  Open Real Account
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\dashboard\mt5\page.tsx:362  No real account found.
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\dashboard\mt5\page.tsx:367  to create a real trading account.
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\dashboard\mt5\page.tsx:373  Real account must use type=live
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\dashboard\mt5\page.tsx:380  Open Real Account
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\dashboard\mt5\demo\page.tsx:221  setError("Order amount exceeds your available buying power.");
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\dashboard\mt5\demo\page.tsx:320  Back to Trading Accounts
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\dashboard\mt5\demo\page.tsx:324  Loading demo trading account...
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\dashboard\mt5\demo\page.tsx:337  Back to Trading Accounts
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\dashboard\mt5\demo\page.tsx:401  <p className="text-xs text-text-muted">Buying Power</p>
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\dashboard\mt5\demo\page.tsx:576  Buying power: {money(data.account.buyingPower)}
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\dashboard\mt5\demo\page.tsx:644  <h2 className="font-semibold text-text">Open Positions</h2>
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\dashboard\mt5\demo\page.tsx:711  No open positions.
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\dashboard\mt5\real\page.tsx:103  data?.message || "Unable to load real trading account"
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\dashboard\mt5\real\page.tsx:111  console.error("REAL ACCOUNT ERROR:", err);
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\dashboard\mt5\real\page.tsx:116  : "Unable to load real account"
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\dashboard\mt5\real\page.tsx:155  Real Account
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\dashboard\mt5\real\page.tsx:183  Real Trading Account
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\dashboard\mt5\real\page.tsx:187  Live account information from your connected trading account.
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\dashboard\mt5\real\page.tsx:206  Real Account
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\dashboard\mt5\real\page.tsx:249  Buying Power
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\dashboard\mt5\real\page.tsx:259  Open Positions
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\dashboard\mt5\real\page.tsx:271  Real account
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\dashboard\mt5\real\page.tsx:284  Open Positions
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\dashboard\mt5\real\page.tsx:290  No open positions.
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\dashboard\transfer\page.tsx:8  // Transfer endpoints: the wallet plus every trading account. Including the
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\dashboard\transfer\page.tsx:9  // wallet means transfers work even with a single trading account (wallet ->
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\dashboard\transfer\page.tsx:44  <p className="text-sm text-text-muted">Move funds between your wallet and trading accounts.</p>
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\login\page.tsx:10  description: "Log in to your  Deriv PK Trading account.",
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\open-account\OpenAccountClient.tsx:274  ? "Profile saved. Creating your real trading account..."
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\open-account\OpenAccountClient.tsx:275  : "Profile saved. Creating your demo trading account..."
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\open-account\OpenAccountClient.tsx:279  // 2. Create Alpaca trading account
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\open-account\OpenAccountClient.tsx:306  "Trading account creation failed."
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\open-account\OpenAccountClient.tsx:316  ? "Real trading account created successfully. Redirecting..."
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\open-account\OpenAccountClient.tsx:317  : "Demo trading account created successfully. Redirecting..."
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\open-account\OpenAccountClient.tsx:342  : "Unable to open trading account."
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\open-account\OpenAccountClient.tsx:367  ? "Open Real Trading Account"
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\open-account\OpenAccountClient.tsx:368  : "Open Demo Trading Account"}
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\open-account\OpenAccountClient.tsx:936  ? "Creating Real Trading Account..."
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\open-account\OpenAccountClient.tsx:937  : "Creating Demo Trading Account..."
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\open-account\OpenAccountClient.tsx:939  ? "Create Real Trading Account"
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\open-account\OpenAccountClient.tsx:940  : "Create Demo Trading Account"}
+D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\register\page.tsx:10  description: "Open a  Deriv PK Trading account.",
