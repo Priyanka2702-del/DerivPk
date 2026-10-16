@@ -1,0 +1,3459 @@
+
+========== FILE: app\dashboard\mt5\real\page.tsx ==========
+
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+
+type Account = {
+  id: string;
+  accountNumber: string;
+  status: string;
+  currency: string;
+  cash: number;
+  buyingPower: number;
+  equity: number;
+};
+
+type Position = {
+  symbol: string;
+  qty: string;
+  side?: string;
+  market_value?: string;
+  cost_basis?: string;
+  unrealized_pl?: string;
+  unrealized_plpc?: string;
+  current_price?: string;
+  avg_entry_price?: string;
+};
+
+type Order = {
+  id: string;
+  symbol: string;
+  qty?: string;
+  side?: string;
+  type?: string;
+  status?: string;
+  time_in_force?: string;
+  filled_qty?: string;
+  filled_avg_price?: string | null;
+  submitted_at?: string;
+  filled_at?: string | null;
+};
+
+type RealResponse = {
+  success: boolean;
+  message?: string;
+  account?: Account;
+  positions?: Position[];
+  orders?: Order[];
+};
+
+function money(value: number | string | undefined) {
+  const number = Number(value ?? 0);
+
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(Number.isFinite(number) ? number : 0);
+}
+
+function number(value: number | string | undefined) {
+  const n = Number(value ?? 0);
+
+  return Number.isFinite(n) ? n.toFixed(2) : "0.00";
+}
+
+export default function RealTradingPage() {
+  const [account, setAccount] = useState<Account | null>(null);
+  const [positions, setPositions] = useState<Position[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
+
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState("");
+
+  const loadRealAccount = useCallback(async (manual = false) => {
+    try {
+      if (manual) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
+
+      setError("");
+
+      const response = await fetch("/api/trading/real", {
+        method: "GET",
+        cache: "no-store",
+      });
+
+      const text = await response.text();
+
+      let data: RealResponse | null = null;
+
+      try {
+        data = text ? JSON.parse(text) : null;
+      } catch {
+        throw new Error("Invalid server response");
+      }
+
+      if (!response.ok || !data?.success) {
+        throw new Error(
+          data?.message || "Unable to load real trading account"
+        );
+      }
+
+      setAccount(data.account ?? null);
+      setPositions(data.positions ?? []);
+      setOrders(data.orders ?? []);
+    } catch (err) {
+      console.error("REAL ACCOUNT ERROR:", err);
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unable to load real account"
+      );
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadRealAccount();
+
+    const interval = setInterval(() => {
+      loadRealAccount();
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, [loadRealAccount]);
+
+  if (loading) {
+    return (
+      <main className="p-6">
+        <div className="animate-pulse space-y-6">
+          <div className="h-8 w-56 rounded bg-gray-200" />
+          <div className="grid gap-4 md:grid-cols-4">
+            <div className="h-28 rounded-xl bg-gray-200" />
+            <div className="h-28 rounded-xl bg-gray-200" />
+            <div className="h-28 rounded-xl bg-gray-200" />
+            <div className="h-28 rounded-xl bg-gray-200" />
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  if (error && !account) {
+    return (
+      <main className="p-6">
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-6">
+          <h1 className="text-xl font-semibold text-red-700">
+            Real Account
+          </h1>
+
+          <p className="mt-2 text-sm text-red-600">
+            {error}
+          </p>
+
+          <button
+            onClick={() => loadRealAccount(true)}
+            className="mt-4 rounded-lg bg-black px-4 py-2 text-sm font-medium text-white"
+          >
+            Try Again
+          </button>
+        </div>
+      </main>
+    );
+  }
+
+  return (
+    <main className="space-y-6 p-6">
+      {/* Header */}
+      <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
+        <div>
+          <p className="text-sm text-gray-500">
+            MT5 WebTrader
+          </p>
+
+          <h1 className="text-2xl font-bold">
+            Real Trading Account
+          </h1>
+
+          <p className="mt-1 text-sm text-gray-500">
+            Live account information from your connected trading account.
+          </p>
+        </div>
+
+        <button
+          onClick={() => loadRealAccount(true)}
+          disabled={refreshing}
+          className="rounded-lg border px-4 py-2 text-sm font-medium hover:bg-gray-50 disabled:opacity-50"
+        >
+          {refreshing ? "Refreshing..." : "Refresh"}
+        </button>
+      </div>
+
+      {/* Account status */}
+      {account && (
+        <section className="rounded-2xl border bg-white p-6 shadow-sm">
+          <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
+            <div>
+              <p className="text-sm text-gray-500">
+                Real Account
+              </p>
+
+              <h2 className="mt-1 text-xl font-semibold">
+                {account.accountNumber || account.id}
+              </h2>
+
+              <p className="mt-1 text-sm text-gray-500">
+                Currency: {account.currency}
+              </p>
+            </div>
+
+            <span className="w-fit rounded-full bg-green-100 px-3 py-1 text-sm font-medium text-green-700">
+              {account.status}
+            </span>
+          </div>
+        </section>
+      )}
+
+      {/* Account summary */}
+      <section className="grid gap-4 md:grid-cols-4">
+        <div className="rounded-2xl border bg-white p-5 shadow-sm">
+          <p className="text-sm text-gray-500">
+            Cash Balance
+          </p>
+
+          <p className="mt-2 text-2xl font-bold">
+            {money(account?.cash)}
+          </p>
+        </div>
+
+        <div className="rounded-2xl border bg-white p-5 shadow-sm">
+          <p className="text-sm text-gray-500">
+            Equity
+          </p>
+
+          <p className="mt-2 text-2xl font-bold">
+            {money(account?.equity)}
+          </p>
+        </div>
+
+        <div className="rounded-2xl border bg-white p-5 shadow-sm">
+          <p className="text-sm text-gray-500">
+            Buying Power
+          </p>
+
+          <p className="mt-2 text-2xl font-bold">
+            {money(account?.buyingPower)}
+          </p>
+        </div>
+
+        <div className="rounded-2xl border bg-white p-5 shadow-sm">
+          <p className="text-sm text-gray-500">
+            Open Positions
+          </p>
+
+          <p className="mt-2 text-2xl font-bold">
+            {positions.length}
+          </p>
+        </div>
+      </section>
+
+      {/* Notice */}
+      <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
+        <h2 className="font-semibold text-amber-900">
+          Real account
+        </h2>
+
+        <p className="mt-1 text-sm leading-6 text-amber-800">
+          This page displays live account, position and order information.
+          Real-money order execution is not enabled in this version.
+        </p>
+      </section>
+
+      {/* Positions */}
+      <section className="rounded-2xl border bg-white shadow-sm">
+        <div className="border-b p-5">
+          <h2 className="text-lg font-semibold">
+            Open Positions
+          </h2>
+        </div>
+
+        {positions.length === 0 ? (
+          <div className="p-8 text-center text-sm text-gray-500">
+            No open positions.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="border-b bg-gray-50">
+                <tr>
+                  <th className="px-5 py-3">Symbol</th>
+                  <th className="px-5 py-3">Side</th>
+                  <th className="px-5 py-3">Qty</th>
+                  <th className="px-5 py-3">Entry</th>
+                  <th className="px-5 py-3">Current</th>
+                  <th className="px-5 py-3">Market Value</th>
+                  <th className="px-5 py-3">P/L</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {positions.map((position) => (
+                  <tr
+                    key={position.symbol}
+                    className="border-b last:border-0"
+                  >
+                    <td className="px-5 py-4 font-semibold">
+                      {position.symbol}
+                    </td>
+
+                    <td className="px-5 py-4">
+                      {position.side ?? "â€”"}
+                    </td>
+
+                    <td className="px-5 py-4">
+                      {number(position.qty)}
+                    </td>
+
+                    <td className="px-5 py-4">
+                      {money(position.avg_entry_price)}
+                    </td>
+
+                    <td className="px-5 py-4">
+                      {money(position.current_price)}
+                    </td>
+
+                    <td className="px-5 py-4">
+                      {money(position.market_value)}
+                    </td>
+
+                    <td className="px-5 py-4">
+                      {money(position.unrealized_pl)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      {/* Orders */}
+      <section className="rounded-2xl border bg-white shadow-sm">
+        <div className="border-b p-5">
+          <h2 className="text-lg font-semibold">
+            Order History
+          </h2>
+        </div>
+
+        {orders.length === 0 ? (
+          <div className="p-8 text-center text-sm text-gray-500">
+            No orders found.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="border-b bg-gray-50">
+                <tr>
+                  <th className="px-5 py-3">Symbol</th>
+                  <th className="px-5 py-3">Side</th>
+                  <th className="px-5 py-3">Type</th>
+                  <th className="px-5 py-3">Qty</th>
+                  <th className="px-5 py-3">Status</th>
+                  <th className="px-5 py-3">Filled Qty</th>
+                  <th className="px-5 py-3">Avg Price</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {orders.map((order) => (
+                  <tr
+                    key={order.id}
+                    className="border-b last:border-0"
+                  >
+                    <td className="px-5 py-4 font-semibold">
+                      {order.symbol}
+                    </td>
+
+                    <td className="px-5 py-4">
+                      {order.side ?? "â€”"}
+                    </td>
+
+                    <td className="px-5 py-4">
+                      {order.type ?? "â€”"}
+                    </td>
+
+                    <td className="px-5 py-4">
+                      {number(order.qty)}
+                    </td>
+
+                    <td className="px-5 py-4">
+                      <span className="rounded-full bg-gray-100 px-2 py-1 text-xs">
+                        {order.status ?? "â€”"}
+                      </span>
+                    </td>
+
+                    <td className="px-5 py-4">
+                      {number(order.filled_qty)}
+                    </td>
+
+                    <td className="px-5 py-4">
+                      {order.filled_avg_price
+                        ? money(order.filled_avg_price)
+                        : "â€”"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      <p className="text-center text-xs text-gray-500">
+        Account data refreshes automatically every 10 seconds.
+      </p>
+    </main>
+  );
+}
+
+
+
+========== FILE: app\dashboard\mt5\demo\page.tsx ==========
+
+"use client";
+
+import Link from "next/link";
+import {
+  ArrowLeft,
+  RefreshCw,
+  TrendingUp,
+  TrendingDown,
+  X,
+} from "lucide-react";
+import {
+  FormEvent,
+  useCallback,
+  useEffect,
+  useState,
+} from "react";
+
+type Account = {
+  id: string;
+  accountNumber: string;
+  status: string;
+  currency: string;
+  cash: string;
+  buyingPower: string;
+  equity: string;
+};
+
+type Position = {
+  symbol: string;
+  qty: string;
+  side: string;
+  avg_entry_price: string;
+  current_price: string;
+  market_value: string;
+  unrealized_pl: string;
+  unrealized_plpc: string;
+};
+
+type Order = {
+  id: string;
+  symbol: string;
+  qty?: string;
+  notional?: string;
+  filled_qty?: string;
+  side: string;
+  type: string;
+  time_in_force: string;
+  status: string;
+  limit_price?: string | null;
+  submitted_at?: string;
+};
+
+type DemoResponse = {
+  account: Account;
+  positions: Position[];
+  orders: Order[];
+};
+
+type OrderMode = "amount" | "quantity";
+
+function money(value: string | number | undefined) {
+  const amount = Number(value ?? 0);
+
+  if (!Number.isFinite(amount)) {
+    return "$0.00";
+  }
+
+  return `$${amount.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+async function readResponse(response: Response) {
+  const text = await response.text();
+
+  try {
+    return text ? JSON.parse(text) : null;
+  } catch {
+    return null;
+  }
+}
+
+export default function DemoTradingPage() {
+  const [data, setData] = useState<DemoResponse | null>(null);
+
+  const [symbol, setSymbol] = useState("AAPL");
+  const [side, setSide] = useState<"buy" | "sell">("buy");
+  const [type, setType] = useState<"market" | "limit">("market");
+
+  const [orderMode, setOrderMode] = useState<OrderMode>("amount");
+  const [orderAmount, setOrderAmount] = useState("10");
+  const [qty, setQty] = useState("1");
+  const [limitPrice, setLimitPrice] = useState("");
+
+  const [fundAmount, setFundAmount] = useState("100");
+  const [funding, setFunding] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [placingOrder, setPlacingOrder] = useState(false);
+  const [closingSymbol, setClosingSymbol] = useState<string | null>(null);
+
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+
+  const loadData = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError("");
+
+      const response = await fetch("/api/trading/demo", {
+        cache: "no-store",
+      });
+
+      const result = await readResponse(response);
+
+      if (!response.ok) {
+        throw new Error(
+          result?.message ||
+            `Failed to load demo account (${response.status})`
+        );
+      }
+
+      if (!result?.account) {
+        throw new Error("Demo account information was not returned.");
+      }
+
+      setData(result);
+    } catch (err) {
+      console.error("DEMO PAGE LOAD ERROR:", err);
+      setError(
+        err instanceof Error ? err.message : "Unable to load demo account."
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadData();
+  }, [loadData]);
+
+  async function addDemoFunds(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    setSuccess("");
+
+    const amount = Number(fundAmount);
+
+    if (!Number.isFinite(amount) || amount < 0.01 || amount > 1000) {
+      setError("Enter an amount between $0.01 and $1,000.");
+      return;
+    }
+
+    try {
+      setFunding(true);
+
+      const response = await fetch("/api/trading/demo/fund", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount }),
+      });
+
+      const result = await readResponse(response);
+
+      if (!response.ok || !result?.success) {
+        throw new Error(result?.message || "Unable to add demo funds.");
+      }
+
+      if (result.fundingComplete) {
+        setSuccess(
+          `${money(amount)} demo funds were added to your account.`
+        );
+      } else {
+        setSuccess(
+          result.message ||
+            "Funding submitted. Refresh shortly to check the account balance."
+        );
+      }
+
+      await loadData();
+    } catch (err) {
+      console.error("DEMO FUNDING ERROR:", err);
+      setError(
+        err instanceof Error ? err.message : "Unable to add demo funds."
+      );
+    } finally {
+      setFunding(false);
+    }
+  }
+
+  async function placeOrder(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    setSuccess("");
+
+    if (!data?.account) {
+      setError("Demo account information is not available.");
+      return;
+    }
+
+    const cleanSymbol = symbol.trim().toUpperCase();
+
+    if (!/^[A-Z][A-Z0-9.-]{0,19}$/.test(cleanSymbol)) {
+      setError("Enter a valid stock symbol.");
+      return;
+    }
+
+    const useAmount = type === "market" && orderMode === "amount";
+    const quantity = Number(qty);
+    const amount = Number(orderAmount);
+    const limit = Number(limitPrice);
+
+    if (useAmount) {
+      if (!Number.isFinite(amount) || amount < 1) {
+        setError("Enter an order amount of at least $1.00.");
+        return;
+      }
+
+      if (side === "buy" && amount > Number(data.account.buyingPower)) {
+        setError("Order amount exceeds your available buying power.");
+        return;
+      }
+    } else {
+      if (!Number.isFinite(quantity) || quantity <= 0) {
+        setError("Enter a valid share quantity.");
+        return;
+      }
+
+      if (type === "limit" && (!Number.isFinite(limit) || limit <= 0)) {
+        setError("Enter a valid limit price.");
+        return;
+      }
+    }
+
+    try {
+      setPlacingOrder(true);
+
+      const payload: Record<string, string> = {
+        symbol: cleanSymbol,
+        side,
+        type,
+        timeInForce: "day",
+      };
+
+      if (useAmount) {
+        payload.notional = amount.toFixed(2);
+      } else {
+        payload.qty = String(quantity);
+      }
+
+      if (type === "limit") {
+        payload.limitPrice = limit.toFixed(2);
+      }
+
+      const response = await fetch("/api/trading/demo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const result = await readResponse(response);
+
+      if (!response.ok || result?.success === false) {
+        throw new Error(result?.message || "Unable to submit paper order.");
+      }
+
+      setSuccess(
+        `${side.toUpperCase()} order submitted for ${cleanSymbol}.`
+      );
+
+      await loadData();
+    } catch (err) {
+      console.error("ORDER ERROR:", err);
+      setError(
+        err instanceof Error ? err.message : "Unable to submit paper order."
+      );
+    } finally {
+      setPlacingOrder(false);
+    }
+  }
+
+  async function closePosition(positionSymbol: string) {
+    try {
+      setClosingSymbol(positionSymbol);
+      setError("");
+      setSuccess("");
+
+      const response = await fetch(
+        `/api/trading/demo/positions/${encodeURIComponent(positionSymbol)}`,
+        { method: "DELETE" }
+      );
+
+      const result = await readResponse(response);
+
+      if (!response.ok) {
+        throw new Error(result?.message || "Unable to close position.");
+      }
+
+      setSuccess(`${positionSymbol} position close request submitted.`);
+      await loadData();
+    } catch (err) {
+      console.error("CLOSE POSITION ERROR:", err);
+      setError(
+        err instanceof Error ? err.message : "Unable to close position."
+      );
+    } finally {
+      setClosingSymbol(null);
+    }
+  }
+
+  if (loading && !data) {
+    return (
+      <div className="space-y-6">
+        <Link
+          href="/dashboard/mt5"
+          className="inline-flex items-center gap-2 text-sm text-text-muted hover:text-text"
+        >
+          <ArrowLeft size={16} />
+          Back to Trading Accounts
+        </Link>
+
+        <div className="rounded-xl border border-border bg-surface p-8 text-center text-sm text-text-muted">
+          Loading demo trading account...
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <Link
+        href="/dashboard/mt5"
+        className="inline-flex items-center gap-2 text-sm text-text-muted hover:text-text"
+      >
+        <ArrowLeft size={16} />
+        Back to Trading Accounts
+      </Link>
+
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wider text-text-muted">
+            Alpaca Paper Account
+          </p>
+          <h1 className="mt-1 text-2xl font-semibold text-text">
+            Demo Trading
+          </h1>
+          <p className="mt-1 text-sm text-text-muted">
+            Practice trading with sandbox funds.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => void loadData()}
+          disabled={loading}
+          className="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium text-text transition hover:bg-surface-2 disabled:opacity-50"
+        >
+          <RefreshCw size={15} />
+          {loading ? "Refreshing..." : "Refresh"}
+        </button>
+      </div>
+
+      {error && (
+        <div
+          role="alert"
+          className="rounded-lg border border-red-500/20 bg-red-500/5 px-4 py-3 text-sm text-red-500"
+        >
+          {error}
+        </div>
+      )}
+
+      {success && (
+        <div
+          role="status"
+          className="rounded-lg border border-green-500/20 bg-green-500/5 px-4 py-3 text-sm text-green-600"
+        >
+          {success}
+        </div>
+      )}
+
+      {data && (
+        <>
+          {/* Each signed-in user sees the account returned by their API session. */}
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-xl border border-border bg-surface p-5">
+              <p className="text-xs text-text-muted">Cash Balance</p>
+              <p className="mt-2 text-xl font-semibold text-text">
+                {money(data.account.cash)}
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-border bg-surface p-5">
+              <p className="text-xs text-text-muted">Total Equity</p>
+              <p className="mt-2 text-xl font-semibold text-text">
+                {money(data.account.equity)}
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-border bg-surface p-5">
+              <p className="text-xs text-text-muted">Buying Power</p>
+              <p className="mt-2 text-xl font-semibold text-text">
+                {money(data.account.buyingPower)}
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-border bg-surface p-5">
+              <p className="text-xs text-text-muted">Account Number</p>
+              <p className="mt-2 text-sm font-semibold text-text">
+                {data.account.accountNumber}
+              </p>
+              <p className="mt-1 text-xs text-green-600">
+                {data.account.status}
+              </p>
+            </div>
+          </div>
+
+          {/* Funding form */}
+          <div className="rounded-xl border border-border bg-surface p-5">
+            <h2 className="font-semibold text-text">Add Demo Funds</h2>
+            <p className="mt-1 text-sm text-text-muted">
+              Add sandbox funds to this demo account. These are not real-money
+              deposits.
+            </p>
+
+            <form
+              onSubmit={addDemoFunds}
+              className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end"
+            >
+              <div className="flex-1">
+                <label
+                  htmlFor="fund-amount"
+                  className="mb-1.5 block text-xs font-medium text-text-muted"
+                >
+                  Amount (USD)
+                </label>
+                <input
+                  id="fund-amount"
+                  type="number"
+                  min="0.01"
+                  max="1000"
+                  step="0.01"
+                  value={fundAmount}
+                  onChange={(e) => setFundAmount(e.target.value)}
+                  required
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-text outline-none focus:border-accent-2"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={funding}
+                className="rounded-lg bg-accent px-5 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {funding ? "Adding Funds..." : "Add Demo Funds"}
+              </button>
+            </form>
+
+            <p className="mt-2 text-xs text-text-muted">
+              Maximum $1,000 per request. Funding is subject to sandbox
+              processing and confirmation.
+            </p>
+          </div>
+
+          {/* Order form */}
+          <div className="rounded-xl border border-border bg-surface">
+            <div className="border-b border-border px-5 py-4">
+              <h2 className="font-semibold text-text">Place Paper Order</h2>
+              <p className="mt-1 text-xs text-text-muted">
+                Choose the dollar amount or number of shares for your order.
+              </p>
+            </div>
+
+            <form
+              onSubmit={placeOrder}
+              className="grid gap-4 p-5 sm:grid-cols-2 lg:grid-cols-3"
+            >
+              <div>
+                <label
+                  htmlFor="order-symbol"
+                  className="mb-1.5 block text-xs font-medium text-text-muted"
+                >
+                  Symbol
+                </label>
+                <input
+                  id="order-symbol"
+                  value={symbol}
+                  onChange={(e) => setSymbol(e.target.value.toUpperCase())}
+                  placeholder="AAPL"
+                  required
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-text outline-none focus:border-accent-2"
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="order-side"
+                  className="mb-1.5 block text-xs font-medium text-text-muted"
+                >
+                  Side
+                </label>
+                <select
+                  id="order-side"
+                  value={side}
+                  onChange={(e) => setSide(e.target.value as "buy" | "sell")}
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-text outline-none"
+                >
+                  <option value="buy">Buy</option>
+                  <option value="sell">Sell</option>
+                </select>
+              </div>
+
+              <div>
+                <label
+                  htmlFor="order-type"
+                  className="mb-1.5 block text-xs font-medium text-text-muted"
+                >
+                  Order Type
+                </label>
+                <select
+                  id="order-type"
+                  value={type}
+                  onChange={(e) => {
+                    const nextType = e.target.value as "market" | "limit";
+                    setType(nextType);
+                    if (nextType === "limit") setOrderMode("quantity");
+                  }}
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-text outline-none"
+                >
+                  <option value="market">Market</option>
+                  <option value="limit">Limit</option>
+                </select>
+              </div>
+
+              {type === "market" && (
+                <div>
+                  <label
+                    htmlFor="order-mode"
+                    className="mb-1.5 block text-xs font-medium text-text-muted"
+                  >
+                    Order Size
+                  </label>
+                  <select
+                    id="order-mode"
+                    value={orderMode}
+                    onChange={(e) =>
+                      setOrderMode(e.target.value as OrderMode)
+                    }
+                    className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-text outline-none"
+                  >
+                    <option value="amount">Amount (USD)</option>
+                    <option value="quantity">Share Quantity</option>
+                  </select>
+                </div>
+              )}
+
+              {type === "market" && orderMode === "amount" ? (
+                <div>
+                  <label
+                    htmlFor="order-amount"
+                    className="mb-1.5 block text-xs font-medium text-text-muted"
+                  >
+                    Amount (USD)
+                  </label>
+                  <input
+                    id="order-amount"
+                    type="number"
+                    min="1"
+                    step="0.01"
+                    value={orderAmount}
+                    onChange={(e) => setOrderAmount(e.target.value)}
+                    required
+                    className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-text outline-none focus:border-accent-2"
+                  />
+                  <p className="mt-1 text-xs text-text-muted">
+                    Buying power: {money(data.account.buyingPower)}
+                  </p>
+                </div>
+              ) : (
+                <div>
+                  <label
+                    htmlFor="order-qty"
+                    className="mb-1.5 block text-xs font-medium text-text-muted"
+                  >
+                    Quantity (shares)
+                  </label>
+                  <input
+                    id="order-qty"
+                    type="number"
+                    min="0.000001"
+                    step="any"
+                    value={qty}
+                    onChange={(e) => setQty(e.target.value)}
+                    required
+                    className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-text outline-none focus:border-accent-2"
+                  />
+                </div>
+              )}
+
+              {type === "limit" && (
+                <div>
+                  <label
+                    htmlFor="limit-price"
+                    className="mb-1.5 block text-xs font-medium text-text-muted"
+                  >
+                    Limit Price (USD)
+                  </label>
+                  <input
+                    id="limit-price"
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    value={limitPrice}
+                    onChange={(e) => setLimitPrice(e.target.value)}
+                    required
+                    className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-text outline-none focus:border-accent-2"
+                  />
+                </div>
+              )}
+
+              <div className="flex items-end">
+                <button
+                  type="submit"
+                  disabled={placingOrder}
+                  className={`w-full rounded-lg px-4 py-2.5 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                    side === "buy"
+                      ? "bg-green-600 hover:bg-green-700"
+                      : "bg-red-600 hover:bg-red-700"
+                  }`}
+                >
+                  {placingOrder
+                    ? "Submitting..."
+                    : `${side === "buy" ? "Buy" : "Sell"} ${
+                        type === "limit" ? "Limit" : ""
+                      }`.trim()}
+                </button>
+              </div>
+            </form>
+          </div>
+
+          {/* Positions */}
+          <div className="rounded-xl border border-border bg-surface">
+            <div className="border-b border-border px-5 py-4">
+              <h2 className="font-semibold text-text">Open Positions</h2>
+            </div>
+
+            {data.positions?.length ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-border text-xs text-text-muted">
+                      <th className="px-5 py-3">Symbol</th>
+                      <th className="px-5 py-3">Qty</th>
+                      <th className="px-5 py-3">Entry</th>
+                      <th className="px-5 py-3">Current</th>
+                      <th className="px-5 py-3">Market Value</th>
+                      <th className="px-5 py-3">P/L</th>
+                      <th className="px-5 py-3">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.positions.map((position) => (
+                      <tr
+                        key={position.symbol}
+                        className="border-b border-border last:border-0"
+                      >
+                        <td className="px-5 py-4 font-semibold text-text">
+                          {position.symbol}
+                        </td>
+                        <td className="px-5 py-4 text-text-muted">
+                          {position.qty}
+                        </td>
+                        <td className="px-5 py-4 text-text-muted">
+                          {money(position.avg_entry_price)}
+                        </td>
+                        <td className="px-5 py-4 text-text-muted">
+                          {money(position.current_price)}
+                        </td>
+                        <td className="px-5 py-4 text-text-muted">
+                          {money(position.market_value)}
+                        </td>
+                        <td
+                          className={`px-5 py-4 font-medium ${
+                            Number(position.unrealized_pl) >= 0
+                              ? "text-green-600"
+                              : "text-red-600"
+                          }`}
+                        >
+                          {money(position.unrealized_pl)}
+                        </td>
+                        <td className="px-5 py-4">
+                          <button
+                            type="button"
+                            disabled={closingSymbol === position.symbol}
+                            onClick={() => void closePosition(position.symbol)}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-red-500/20 px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-500/5 disabled:opacity-50"
+                          >
+                            <X size={13} />
+                            {closingSymbol === position.symbol
+                              ? "Closing..."
+                              : "Close"}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="px-5 py-10 text-center text-sm text-text-muted">
+                No open positions.
+              </div>
+            )}
+          </div>
+
+          {/* Orders */}
+          <div className="rounded-xl border border-border bg-surface">
+            <div className="border-b border-border px-5 py-4">
+              <h2 className="font-semibold text-text">Orders</h2>
+            </div>
+
+            {data.orders?.length ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-border text-xs text-text-muted">
+                      <th className="px-5 py-3">Symbol</th>
+                      <th className="px-5 py-3">Side</th>
+                      <th className="px-5 py-3">Qty</th>
+                      <th className="px-5 py-3">Type</th>
+                      <th className="px-5 py-3">Status</th>
+                      <th className="px-5 py-3">Time</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.orders.map((order) => (
+                      <tr
+                        key={order.id}
+                        className="border-b border-border last:border-0"
+                      >
+                        <td className="px-5 py-4 font-semibold text-text">
+                          {order.symbol}
+                        </td>
+                        <td
+                          className={`px-5 py-4 font-medium ${
+                            order.side === "buy"
+                              ? "text-green-600"
+                              : "text-red-600"
+                          }`}
+                        >
+                          <span className="inline-flex items-center gap-1">
+                            {order.side === "buy" ? (
+                              <TrendingUp size={14} />
+                            ) : (
+                              <TrendingDown size={14} />
+                            )}
+                            {order.side.toUpperCase()}
+                          </span>
+                        </td>
+                        <td className="px-5 py-4 text-text-muted">
+                          {order.filled_qty || order.qty || "-"}
+                        </td>
+                        <td className="px-5 py-4 text-text-muted">
+                          {order.type}
+                        </td>
+                        <td className="px-5 py-4 text-text-muted">
+                          {order.status}
+                        </td>
+                        <td className="px-5 py-4 text-xs text-text-muted">
+                          {order.submitted_at
+                            ? new Date(order.submitted_at).toLocaleString()
+                            : "-"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="px-5 py-10 text-center text-sm text-text-muted">
+                No orders yet.
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      <div className="rounded-lg border border-border bg-surface px-4 py-3 text-xs text-text-muted">
+        <strong className="text-text">Paper Trading:</strong>{" "}
+        This page uses the signed-in user's connected Alpaca sandbox paper
+        account. Orders use sandbox funds and do not use real money.
+      </div>
+    </div>
+  );
+}
+
+
+========== FILE: app\api\trading\real\route.ts ==========
+
+import { NextResponse } from "next/server";
+import { requireAuth } from "@/lib/session";
+import {connectDB }from "@/lib/db";
+import TradingAccount from "@/models/TradingAccount";
+import { alpacaRequest } from "@/lib/alpaca/broker";
+
+type AlpacaAccount = {
+  id: string;
+  account_number?: string;
+  status?: string;
+  currency?: string;
+  cash?: string;
+  buying_power?: string;
+  equity?: string;
+  last_equity?: string;
+};
+
+type AlpacaPosition = {
+  symbol: string;
+  qty: string;
+  side?: string;
+  market_value?: string;
+  cost_basis?: string;
+  unrealized_pl?: string;
+  unrealized_plpc?: string;
+  current_price?: string;
+  avg_entry_price?: string;
+};
+
+type AlpacaOrder = {
+  id: string;
+  symbol: string;
+  qty?: string;
+  side?: string;
+  type?: string;
+  status?: string;
+  time_in_force?: string;
+  filled_qty?: string;
+  filled_avg_price?: string | null;
+  submitted_at?: string;
+  filled_at?: string | null;
+};
+
+function errorMessage(error: unknown) {
+  return error instanceof Error
+    ? error.message
+    : "Unable to load real trading account";
+}
+
+export async function GET() {
+  try {
+    const user = await requireAuth();
+
+    if (!user) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Unauthorized",
+        },
+        { status: 401 }
+      );
+    }
+
+    await connectDB();
+
+    const localAccount = await TradingAccount.findOne({
+      userId: user.id,
+      provider: "alpaca",
+      accountType: "live",
+    }).lean();
+
+    if (!localAccount) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "No real trading account found",
+        },
+        { status: 404 }
+      );
+    }
+
+    const accountId = localAccount.providerAccountId;
+
+    const [account, positions, orders] = await Promise.all([
+      alpacaRequest<AlpacaAccount>(
+        `/v1/trading/accounts/${accountId}/account`
+      ),
+
+      alpacaRequest<AlpacaPosition[]>(
+        `/v1/trading/accounts/${accountId}/positions`
+      ),
+
+      alpacaRequest<AlpacaOrder[]>(
+        `/v1/trading/accounts/${accountId}/orders?status=all&limit=50&direction=desc`
+      ),
+    ]);
+
+    return NextResponse.json({
+      success: true,
+      account: {
+        id: account.id,
+        accountNumber: account.account_number ?? "",
+        status: account.status ?? localAccount.status,
+        currency: account.currency ?? "USD",
+        cash: Number(account.cash ?? 0),
+        buyingPower: Number(account.buying_power ?? 0),
+        equity: Number(account.equity ?? account.last_equity ?? 0),
+      },
+      positions: Array.isArray(positions) ? positions : [],
+      orders: Array.isArray(orders) ? orders : [],
+    });
+  } catch (error) {
+    console.error("REAL TRADING GET ERROR:", error);
+
+    return NextResponse.json(
+      {
+        success: false,
+        message: errorMessage(error),
+      },
+      { status: 500 }
+    );
+  }
+}
+
+========== FILE: app\api\trading\demo\route.ts ==========
+
+import { NextRequest, NextResponse } from "next/server";
+
+import { requireAuth } from "@/lib/session";
+import { connectDB } from "@/lib/db";
+import TradingAccount from "@/models/TradingAccount";
+import { alpacaRequest } from "@/lib/alpaca/broker";
+
+type OrderSide = "buy" | "sell";
+type OrderType = "market" | "limit";
+type TimeInForce = "day" | "gtc";
+
+type AlpacaAccount = {
+  id: string;
+  account_number?: string;
+  status?: string;
+  currency?: string;
+  cash?: string | number;
+  buying_power?: string | number;
+  equity?: string | number;
+  last_equity?: string | number;
+  portfolio_value?: string | number;
+  trading_blocked?: boolean;
+  account_blocked?: boolean;
+  transfers_blocked?: boolean;
+  pattern_day_trader?: boolean;
+  daytrade_count?: number;
+  multiplier?: string | number;
+  initial_margin?: string | number;
+  maintenance_margin?: string | number;
+  last_maintenance_margin?: string | number;
+  created_at?: string;
+  updated_at?: string;
+};
+
+type AlpacaPosition = {
+  symbol: string;
+  qty: string;
+  side?: string;
+  market_value?: string;
+  cost_basis?: string;
+  unrealized_pl?: string;
+  unrealized_plpc?: string;
+  current_price?: string;
+  avg_entry_price?: string;
+};
+
+type AlpacaOrder = {
+  id: string;
+  client_order_id?: string;
+  symbol: string;
+  side: string;
+  type: string;
+  time_in_force: string;
+  qty?: string;
+  notional?: string;
+  filled_qty?: string;
+  filled_avg_price?: string | null;
+  status: string;
+  limit_price?: string | null;
+  stop_price?: string | null;
+  created_at?: string;
+  submitted_at?: string;
+  filled_at?: string | null;
+};
+
+function toNumber(value: unknown): number {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : 0;
+}
+
+function normalizeSymbol(value: unknown): string {
+  return String(value || "").trim().toUpperCase();
+}
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  return "Unknown trading error";
+}
+
+function getStatusFromAlpacaError(message: string): number {
+  const lower = message.toLowerCase();
+
+  if (message.includes("404")) return 404;
+  if (message.includes("409") || lower.includes("conflict")) return 409;
+  if (
+    message.includes("422") ||
+    lower.includes("unprocessable")
+  ) return 422;
+  if (
+    message.includes("403") ||
+    lower.includes("forbidden")
+  ) return 403;
+  if (
+    message.includes("401") ||
+    lower.includes("unauthorized")
+  ) return 401;
+  if (
+    message.includes("400") ||
+    lower.includes("bad request")
+  ) return 400;
+
+  return 502;
+}
+
+function buildAccountDiagnostics(account: AlpacaAccount) {
+  const cash = toNumber(account.cash);
+  const equity = toNumber(
+    account.equity ?? account.portfolio_value ?? account.last_equity
+  );
+  const buyingPower = toNumber(account.buying_power);
+
+  return {
+    id: account.id,
+    accountNumber: account.account_number ?? null,
+    status: account.status ?? null,
+    currency: account.currency ?? "USD",
+    cash,
+    equity,
+    buyingPower,
+    tradingBlocked: Boolean(account.trading_blocked),
+    accountBlocked: Boolean(account.account_blocked),
+    transfersBlocked: Boolean(account.transfers_blocked),
+    patternDayTrader: Boolean(account.pattern_day_trader),
+    daytradeCount: account.daytrade_count ?? 0,
+    multiplier: account.multiplier ?? null,
+
+    canTrade:
+      account.status === "ACTIVE" &&
+      !account.trading_blocked &&
+      !account.account_blocked,
+
+    hasBuyingPower: buyingPower > 0,
+
+    warning: account.account_blocked
+      ? "This account is blocked."
+      : account.trading_blocked
+        ? "Trading is blocked on this account."
+        : account.status !== "ACTIVE"
+          ? `Account status is ${account.status ?? "unknown"}.`
+          : buyingPower <= 0
+            ? "Account has no buying power."
+            : null,
+  };
+}
+
+/**
+ * GET
+ * Returns the authenticated user's own paper account, positions and orders.
+ */
+export async function GET() {
+  try {
+    const user = await requireAuth();
+
+    if (!user) {
+      return NextResponse.json(
+        { success: false, message: "Unauthorized" },
+        { status: 401 }
+      );
+    }
+
+    await connectDB();
+
+    const tradingAccount = await TradingAccount.findOne({
+      userId: user.id,
+      provider: "alpaca",
+      accountType: "paper",
+    }).lean();
+
+    if (!tradingAccount) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Paper trading account not found.",
+          code: "PAPER_ACCOUNT_NOT_FOUND",
+        },
+        { status: 404 }
+      );
+    }
+
+    const providerAccountId = tradingAccount.providerAccountId;
+
+    try {
+      const [account, positions, orders] = await Promise.all([
+        alpacaRequest<AlpacaAccount>(
+          `/v1/trading/accounts/${providerAccountId}/account`
+        ),
+        alpacaRequest<AlpacaPosition[]>(
+          `/v1/trading/accounts/${providerAccountId}/positions`
+        ),
+        alpacaRequest<AlpacaOrder[]>(
+          `/v1/trading/accounts/${providerAccountId}/orders?status=all&limit=50&direction=desc`
+        ),
+      ]);
+
+      const diagnostics = buildAccountDiagnostics(account);
+
+      return NextResponse.json({
+        success: true,
+        account: {
+          id: account.id,
+          accountNumber: account.account_number ?? null,
+          status: account.status ?? null,
+          currency: account.currency ?? "USD",
+          cash: toNumber(account.cash),
+          equity: toNumber(
+            account.equity ??
+              account.portfolio_value ??
+              account.last_equity
+          ),
+          buyingPower: toNumber(account.buying_power),
+        },
+        accountDiagnostics: diagnostics,
+        positions: Array.isArray(positions) ? positions : [],
+        orders: Array.isArray(orders) ? orders : [],
+        localAccount: {
+          id: String(tradingAccount._id),
+          accountType: tradingAccount.accountType,
+          provider: tradingAccount.provider,
+          providerAccountId: tradingAccount.providerAccountId,
+          status: tradingAccount.status,
+        },
+      });
+    } catch (error) {
+      const message = getErrorMessage(error);
+
+      console.error("DEMO ACCOUNT FETCH DIAGNOSTICS:", {
+        message,
+        providerAccountId,
+      });
+
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Unable to fetch paper trading account.",
+          error: message,
+          code: "ALPACA_ACCOUNT_FETCH_FAILED",
+        },
+        { status: getStatusFromAlpacaError(message) }
+      );
+    }
+  } catch (error) {
+    const message = getErrorMessage(error);
+
+    console.error("DEMO GET ERROR:", error);
+
+    return NextResponse.json(
+      {
+        success: false,
+        message: "Failed to load demo trading data.",
+        error: message,
+        code: "DEMO_GET_FAILED",
+      },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * POST
+ * Supports:
+ * - Market orders by dollar amount: { notional: "25.00" }
+ * - Orders by share quantity: { qty: "1" }
+ * - Limit orders by quantity and limitPrice
+ */
+export async function POST(request: NextRequest) {
+  try {
+    const user = await requireAuth();
+
+    if (!user) {
+      return NextResponse.json(
+        { success: false, message: "Unauthorized" },
+        { status: 401 }
+      );
+    }
+
+    let body: {
+      symbol?: string;
+      side?: OrderSide;
+      type?: OrderType;
+      timeInForce?: TimeInForce;
+      qty?: number | string;
+      notional?: number | string;
+      limitPrice?: number | string;
+    };
+
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Invalid JSON request body.",
+          code: "INVALID_JSON",
+        },
+        { status: 400 }
+      );
+    }
+
+    const symbol = normalizeSymbol(body.symbol);
+    const side = body.side;
+    const type = body.type;
+    const timeInForce = body.timeInForce ?? "day";
+
+    const hasNotional =
+      body.notional !== undefined &&
+      body.notional !== null &&
+      body.notional !== "";
+
+    const amount = hasNotional ? Number(body.notional) : undefined;
+    const qty = hasNotional ? undefined : Number(body.qty);
+
+    const limitPrice =
+      body.limitPrice === undefined ||
+      body.limitPrice === null ||
+      body.limitPrice === ""
+        ? undefined
+        : Number(body.limitPrice);
+
+    // Basic request validation
+    if (!/^[A-Z][A-Z0-9.-]{0,19}$/.test(symbol)) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Enter a valid stock symbol.",
+          code: "INVALID_SYMBOL",
+        },
+        { status: 400 }
+      );
+    }
+
+    if (side !== "buy" && side !== "sell") {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Side must be either buy or sell.",
+          code: "INVALID_SIDE",
+        },
+        { status: 400 }
+      );
+    }
+
+    if (type !== "market" && type !== "limit") {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Order type must be market or limit.",
+          code: "INVALID_ORDER_TYPE",
+        },
+        { status: 400 }
+      );
+    }
+
+    if (timeInForce !== "day" && timeInForce !== "gtc") {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Time in force must be day or gtc.",
+          code: "INVALID_TIME_IN_FORCE",
+        },
+        { status: 400 }
+      );
+    }
+
+    // Dollar-amount orders are market/day orders only.
+    if (hasNotional && (type !== "market" || timeInForce !== "day")) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Dollar-amount orders are supported for market orders with day time-in-force only.",
+          code: "NOTIONAL_ORDER_NOT_SUPPORTED",
+        },
+        { status: 400 }
+      );
+    }
+
+    if (hasNotional) {
+      if (
+        !Number.isFinite(amount) ||
+        amount! < 1 ||
+        Math.abs(amount! * 100 - Math.round(amount! * 100)) > 1e-7
+      ) {
+        return NextResponse.json(
+          {
+            success: false,
+            message:
+              "Order amount must be at least $1.00 and have at most two decimal places.",
+            code: "INVALID_NOTIONAL",
+          },
+          { status: 400 }
+        );
+      }
+    } else if (!Number.isFinite(qty) || qty! <= 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Quantity must be greater than 0.",
+          code: "INVALID_QUANTITY",
+        },
+        { status: 400 }
+      );
+    }
+
+    if (
+      type === "limit" &&
+      (!Number.isFinite(limitPrice) || limitPrice! <= 0)
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "A valid limit price is required for a limit order.",
+          code: "INVALID_LIMIT_PRICE",
+        },
+        { status: 400 }
+      );
+    }
+
+    await connectDB();
+
+    // Always resolve the account from the authenticated user's database record.
+    const tradingAccount = await TradingAccount.findOne({
+      userId: user.id,
+      provider: "alpaca",
+      accountType: "paper",
+    }).lean();
+
+    if (!tradingAccount) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Paper trading account not found.",
+          code: "PAPER_ACCOUNT_NOT_FOUND",
+        },
+        { status: 404 }
+      );
+    }
+
+    const providerAccountId = tradingAccount.providerAccountId;
+
+    let account: AlpacaAccount;
+
+    try {
+      account = await alpacaRequest<AlpacaAccount>(
+        `/v1/trading/accounts/${providerAccountId}/account`
+      );
+    } catch (error) {
+      const message = getErrorMessage(error);
+
+      console.error("DEMO ACCOUNT DIAGNOSTIC ERROR:", {
+        userId: user.id,
+        providerAccountId,
+        message,
+      });
+
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Unable to verify the paper trading account.",
+          error: message,
+          code: "ACCOUNT_DIAGNOSTIC_FAILED",
+        },
+        { status: getStatusFromAlpacaError(message) }
+      );
+    }
+
+    const diagnostics = buildAccountDiagnostics(account);
+
+    if (account.account_blocked || account.trading_blocked) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: account.account_blocked
+            ? "This paper account is blocked."
+            : "Trading is blocked on this paper account.",
+          code: account.account_blocked
+            ? "ACCOUNT_BLOCKED"
+            : "TRADING_BLOCKED",
+          accountDiagnostics: diagnostics,
+        },
+        { status: 409 }
+      );
+    }
+
+    if (account.status !== "ACTIVE") {
+      return NextResponse.json(
+        {
+          success: false,
+          message: `Trading account is not active. Current status: ${
+            account.status ?? "unknown"
+          }.`,
+          code: "ACCOUNT_NOT_ACTIVE",
+          accountDiagnostics: diagnostics,
+        },
+        { status: 409 }
+      );
+    }
+
+    // BUY checks: compare dollar amount or limit order's estimated cost.
+    if (side === "buy") {
+      if (diagnostics.buyingPower <= 0) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: "Your demo account has no available buying power.",
+            code: "INSUFFICIENT_BUYING_POWER",
+            accountDiagnostics: diagnostics,
+          },
+          { status: 409 }
+        );
+      }
+
+      if (hasNotional && amount! > diagnostics.buyingPower) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: `Order amount ${amount!.toFixed(
+              2
+            )} USD exceeds your available buying power of ${diagnostics.buyingPower.toFixed(
+              2
+            )} USD.`,
+            code: "INSUFFICIENT_BUYING_POWER",
+            availableBuyingPower: diagnostics.buyingPower,
+            requestedAmount: amount,
+            accountDiagnostics: diagnostics,
+          },
+          { status: 409 }
+        );
+      }
+
+      if (
+        !hasNotional &&
+        type === "limit" &&
+        qty! * limitPrice! > diagnostics.buyingPower
+      ) {
+        return NextResponse.json(
+          {
+            success: false,
+            message:
+              "The estimated limit order cost exceeds your available buying power.",
+            code: "INSUFFICIENT_BUYING_POWER",
+            availableBuyingPower: diagnostics.buyingPower,
+            estimatedOrderCost: qty! * limitPrice!,
+            accountDiagnostics: diagnostics,
+          },
+          { status: 409 }
+        );
+      }
+    }
+
+    // SELL checks: verify that this account owns the position.
+    if (side === "sell") {
+      let position: AlpacaPosition | undefined;
+
+      try {
+        const positions = await alpacaRequest<AlpacaPosition[]>(
+          `/v1/trading/accounts/${providerAccountId}/positions`
+        );
+
+        position = Array.isArray(positions)
+          ? positions.find(
+              (item) => normalizeSymbol(item.symbol) === symbol
+            )
+          : undefined;
+      } catch (error) {
+        const message = getErrorMessage(error);
+
+        console.error("DEMO POSITION CHECK ERROR:", {
+          userId: user.id,
+          providerAccountId,
+          symbol,
+          message,
+        });
+
+        return NextResponse.json(
+          {
+            success: false,
+            message: "Unable to verify your existing position.",
+            error: message,
+            code: "POSITION_CHECK_FAILED",
+          },
+          { status: getStatusFromAlpacaError(message) }
+        );
+      }
+
+      if (!position) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: `You do not currently hold a ${symbol} position.`,
+            code: "POSITION_NOT_FOUND",
+          },
+          { status: 409 }
+        );
+      }
+
+      if (String(position.side ?? "").toLowerCase() === "short") {
+        return NextResponse.json(
+          {
+            success: false,
+            message:
+              "This is a short position. Use the appropriate position-closing action instead.",
+            code: "SHORT_POSITION_NOT_SELLABLE",
+          },
+          { status: 409 }
+        );
+      }
+
+      const availableQty = Math.max(0, toNumber(position.qty));
+      const positionValue = Math.abs(
+        toNumber(position.market_value) ||
+          availableQty * toNumber(position.current_price)
+      );
+
+      if (!hasNotional && qty! > availableQty) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: `You requested ${qty} shares, but only ${availableQty} shares of ${symbol} are available.`,
+            code: "INSUFFICIENT_POSITION",
+            requestedQuantity: qty,
+            availableQuantity: availableQty,
+          },
+          { status: 409 }
+        );
+      }
+
+      if (hasNotional && amount! > positionValue) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: `The requested sell amount exceeds the current estimated market value of your ${symbol} position (${positionValue.toFixed(
+              2
+            )} USD).`,
+            code: "INSUFFICIENT_POSITION_VALUE",
+            requestedAmount: amount,
+            availablePositionValue: positionValue,
+          },
+          { status: 409 }
+        );
+      }
+    }
+
+    // Alpaca accepts either qty or notional; never send both.
+    const orderPayload: Record<string, unknown> = {
+      symbol,
+      side,
+      type,
+      time_in_force: timeInForce,
+    };
+
+    if (hasNotional) {
+      orderPayload.notional = amount!.toFixed(2);
+    } else {
+      orderPayload.qty = String(qty);
+    }
+
+    if (type === "limit") {
+      orderPayload.limit_price = limitPrice!.toFixed(2);
+    }
+
+    console.log("CREATING PAPER ORDER:", {
+      userId: user.id,
+      providerAccountId,
+      symbol,
+      side,
+      type,
+      timeInForce,
+      notional: hasNotional ? amount : undefined,
+      qty: hasNotional ? undefined : qty,
+    });
+
+    try {
+      const order = await alpacaRequest<AlpacaOrder>(
+        `/v1/trading/accounts/${providerAccountId}/orders`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(orderPayload),
+        }
+      );
+
+      return NextResponse.json(
+        {
+          success: true,
+          message: `${side.toUpperCase()} order submitted successfully.`,
+          order,
+          accountDiagnostics: diagnostics,
+        },
+        { status: 201 }
+      );
+    } catch (error) {
+      const message = getErrorMessage(error);
+      const lowerMessage = message.toLowerCase();
+
+      console.error("DEMO ORDER CREATION ERROR:", {
+        userId: user.id,
+        providerAccountId,
+        symbol,
+        side,
+        type,
+        notional: hasNotional ? amount : undefined,
+        qty: hasNotional ? undefined : qty,
+        message,
+      });
+
+      let userMessage = "Paper order could not be submitted.";
+      let code = "ORDER_SUBMISSION_FAILED";
+
+      if (
+        lowerMessage.includes("buying power") ||
+        lowerMessage.includes("insufficient")
+      ) {
+        userMessage =
+          "Order rejected because the paper account does not have enough buying power or available position value.";
+        code = "INSUFFICIENT_BUYING_POWER";
+      } else if (
+        lowerMessage.includes("position") &&
+        lowerMessage.includes("sell")
+      ) {
+        userMessage =
+          "Sell order rejected because the requested position or quantity is not available.";
+        code = "SELL_POSITION_ERROR";
+      } else if (lowerMessage.includes("trading blocked")) {
+        userMessage = "Trading is blocked on this paper account.";
+        code = "TRADING_BLOCKED";
+      } else if (lowerMessage.includes("account blocked")) {
+        userMessage = "This paper account is blocked.";
+        code = "ACCOUNT_BLOCKED";
+      } else if (
+        lowerMessage.includes("market") &&
+        lowerMessage.includes("closed")
+      ) {
+        userMessage = "The market is currently closed for this order.";
+        code = "MARKET_CLOSED";
+      }
+
+      return NextResponse.json(
+        {
+          success: false,
+          message: userMessage,
+          error: message,
+          code,
+          symbol,
+          side,
+          type,
+          notional: hasNotional ? amount : undefined,
+          qty: hasNotional ? undefined : qty,
+          accountDiagnostics: diagnostics,
+        },
+        { status: getStatusFromAlpacaError(message) }
+      );
+    }
+  } catch (error) {
+    const message = getErrorMessage(error);
+
+    console.error("DEMO POST ERROR:", error);
+
+    return NextResponse.json(
+      {
+        success: false,
+        message: "Failed to process paper trading order.",
+        error: message,
+        code: "DEMO_ORDER_FAILED",
+      },
+      { status: 500 }
+    );
+  }
+}
+
+
+========== FILE: app\api\trading\demo\fund\route.ts ==========
+
+import { NextRequest, NextResponse } from "next/server";
+
+import { requireAuth } from "@/lib/session";
+import { connectDB } from "@/lib/db";
+import TradingAccount from "@/models/TradingAccount";
+
+import {
+  alpacaRequest,
+  alpacaSandboxFundAccount,
+  type AlpacaJournal,
+} from "@/lib/alpaca/broker";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+const MAX_FUNDING_AMOUNT = 1000;
+
+type AlpacaAccount = {
+  id: string;
+  account_number: string;
+  status: string;
+  currency: string;
+  cash: string;
+  equity: string;
+  buying_power: string;
+  account_blocked?: boolean;
+  trading_blocked?: boolean;
+  transfers_blocked?: boolean;
+};
+
+function accountResponse(account: AlpacaAccount) {
+  return {
+    id: account.id,
+    accountNumber: account.account_number,
+    status: account.status,
+    currency: account.currency,
+    cash: Number(account.cash),
+    equity: Number(account.equity),
+    buyingPower: Number(account.buying_power),
+  };
+}
+
+function journalResponse(journal: AlpacaJournal) {
+  return {
+    id: journal.id,
+    status: journal.status,
+    amount: journal.amount,
+    currency: journal.currency || "USD",
+    createdAt: journal.created_at,
+  };
+}
+
+/**
+ * Check an existing journal.
+ * This endpoint never creates a funding journal.
+ */
+export async function GET(request: NextRequest) {
+  try {
+    const user = await requireAuth();
+
+    if (!user) {
+      return NextResponse.json(
+        { success: false, message: "Unauthorized." },
+        { status: 401 }
+      );
+    }
+
+    const journalId = new URL(request.url)
+      .searchParams.get("journalId");
+
+    if (!journalId || !/^[0-9a-f-]{36}$/i.test(journalId)) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "A valid journalId is required.",
+        },
+        { status: 400 }
+      );
+    }
+
+    await connectDB();
+
+    const tradingAccount = await TradingAccount.findOne({
+      userId: user.id,
+      provider: "alpaca",
+      accountType: "paper",
+    }).lean();
+
+    if (!tradingAccount?.providerAccountId) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Paper trading account not found.",
+        },
+        { status: 404 }
+      );
+    }
+
+    const journal = await alpacaRequest<AlpacaJournal>(
+      `/v1/journals/${encodeURIComponent(journalId)}`
+    );
+
+    if (journal.to_account !== tradingAccount.providerAccountId) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "This journal does not belong to your paper account.",
+        },
+        { status: 403 }
+      );
+    }
+
+    const status = String(journal.status || "").toLowerCase();
+    const fundingComplete = status === "executed";
+    const fundingFailed = [
+      "canceled",
+      "cancelled",
+      "deleted",
+      "rejected",
+      "refused",
+    ].includes(status);
+
+    return NextResponse.json({
+      success: true,
+      fundingComplete,
+      fundingFailed,
+      message: fundingComplete
+        ? "Funding journal executed. Check your account balance."
+        : fundingFailed
+          ? `Funding was not completed. Journal status: ${status}.`
+          : `Journal status: ${status || "unknown"}. Funding is not confirmed yet.`,
+      journal: journalResponse(journal),
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Unknown journal status error.";
+
+    console.error("JOURNAL STATUS CHECK ERROR:", message);
+
+    return NextResponse.json(
+      {
+        success: false,
+        message: "Could not check journal status.",
+        error: message,
+      },
+      { status: 502 }
+    );
+  }
+}
+
+/**
+ * Submit a sandbox funding journal.
+ */
+export async function POST(request: NextRequest) {
+  try {
+    const user = await requireAuth();
+
+    if (!user) {
+      return NextResponse.json(
+        { success: false, message: "Unauthorized." },
+        { status: 401 }
+      );
+    }
+
+    let body: { amount?: number | string };
+
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Invalid JSON request body.",
+        },
+        { status: 400 }
+      );
+    }
+
+    const amount = Number(body.amount);
+
+    if (
+      !Number.isFinite(amount) ||
+      amount < 0.01 ||
+      amount > MAX_FUNDING_AMOUNT
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Funding amount must be between $0.01 and $1,000 per request.",
+        },
+        { status: 400 }
+      );
+    }
+
+    const roundedAmount = Math.round(amount * 100) / 100;
+
+    if (roundedAmount < 0.01) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Funding amount must be at least $0.01.",
+        },
+        { status: 400 }
+      );
+    }
+
+    await connectDB();
+
+    const tradingAccount = await TradingAccount.findOne({
+      userId: user.id,
+      provider: "alpaca",
+      accountType: "paper",
+    }).lean();
+
+    if (!tradingAccount) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Paper trading account not found.",
+          code: "PAPER_ACCOUNT_NOT_FOUND",
+        },
+        { status: 404 }
+      );
+    }
+
+    if (!tradingAccount.providerAccountId) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "The paper account has no Alpaca account ID.",
+          code: "PROVIDER_ACCOUNT_ID_MISSING",
+        },
+        { status: 409 }
+      );
+    }
+
+    const account = await alpacaRequest<AlpacaAccount>(
+      `/v1/trading/accounts/${encodeURIComponent(
+        tradingAccount.providerAccountId
+      )}/account`
+    );
+
+    if (account.status !== "ACTIVE") {
+      return NextResponse.json(
+        {
+          success: false,
+          message: `Alpaca account is not ACTIVE. Current status: ${account.status}`,
+          code: "ACCOUNT_NOT_ACTIVE",
+        },
+        { status: 409 }
+      );
+    }
+
+    if (account.account_blocked || account.transfers_blocked) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "The Alpaca account is blocked from funding or transfers.",
+          code: "ACCOUNT_BLOCKED",
+        },
+        { status: 409 }
+      );
+    }
+
+    const funding = await alpacaSandboxFundAccount({
+      accountId: account.id,
+      amount: roundedAmount,
+    });
+
+    const status = String(funding.status || "").toLowerCase();
+
+    const fundingComplete = status === "executed";
+
+    const fundingPending = [
+      "pending",
+      "queued",
+      "sent_to_clearing",
+    ].includes(status);
+
+    const fundingFailed = [
+      "canceled",
+      "cancelled",
+      "deleted",
+      "rejected",
+      "refused",
+    ].includes(status);
+
+    const knownStatus =
+      fundingComplete || fundingPending || fundingFailed;
+
+    // Fetch the latest account snapshot. A newly submitted journal
+    // may take time to affect the balance.
+    const updatedAccount = await alpacaRequest<AlpacaAccount>(
+      `/v1/trading/accounts/${encodeURIComponent(
+        tradingAccount.providerAccountId
+      )}/account`
+    );
+
+    const balance = accountResponse(updatedAccount);
+
+    const responseBody = {
+      // success means the request was handled, not necessarily funded.
+      success: !fundingFailed,
+      fundingComplete,
+      fundingPending,
+      message: fundingComplete
+        ? "Funding journal executed. Check the account balance to confirm the credit."
+        : fundingPending
+          ? "Funding request is pending. Do not submit it again; check the journal status later."
+          : fundingFailed
+            ? `Funding was not completed. Journal status: ${status}.`
+            : `Unrecognized journal status: ${status || "unknown"}. Verify it before taking further action.`,
+      funding: journalResponse(funding),
+      balanceUpdated:
+        fundingComplete && balance.cash > Number(account.cash),
+      account: balance,
+    };
+
+    return NextResponse.json(responseBody, {
+      status: fundingFailed ? 409 : fundingPending ? 202 : 200,
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Unknown funding error.";
+
+    console.error("PAPER ACCOUNT FUNDING ERROR:", message);
+
+    return NextResponse.json(
+      {
+        success: false,
+        message: "Unable to submit or verify sandbox funding.",
+        error: message,
+        code: "PAPER_FUNDING_FAILED",
+      },
+      { status: 502 }
+    );
+  }
+}
+
+
+========== FILE: app\api\trading\accounts\route.ts ==========
+
+import { NextRequest, NextResponse } from "next/server";
+
+import { requireAuth } from "@/lib/session";
+import { connectDB } from "@/lib/db";
+import { alpacaRequest } from "@/lib/alpaca/broker";
+
+import User from "@/models/User";
+import TradingProfile from "@/models/TradingProfile";
+import TradingAccount from "@/models/TradingAccount";
+
+/* -------------------------------------------------------------------------- */
+/* Types                                                                      */
+/* -------------------------------------------------------------------------- */
+
+type AccountType = "paper" | "live";
+
+type AlpacaAccountResponse = {
+  id: string;
+  account_number?: string;
+  status?: string;
+  currency?: string;
+  buying_power?: string;
+  cash?: string;
+  portfolio_value?: string;
+  equity?: string;
+  long_market_value?: string;
+  short_market_value?: string;
+  initial_margin?: string;
+  maintenance_margin?: string;
+  daytrade_count?: number;
+  pattern_day_trader?: boolean;
+  trading_blocked?: boolean;
+  transfers_blocked?: boolean;
+  account_blocked?: boolean;
+  created_at?: string;
+  updated_at?: string;
+};
+
+type CreateAccountResponse = AlpacaAccountResponse;
+
+/* -------------------------------------------------------------------------- */
+/* Helpers                                                                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Get the client's IP address.
+ *
+ * Used for Alpaca agreement signatures.
+ */
+function getRequestIp(request: NextRequest): string {
+  const forwardedFor = request.headers.get("x-forwarded-for");
+
+  if (forwardedFor) {
+    return forwardedFor.split(",")[0].trim();
+  }
+
+  const realIp = request.headers.get("x-real-ip");
+
+  if (realIp) {
+    return realIp.trim();
+  }
+
+  return "127.0.0.1";
+}
+
+/**
+ * Convert a MongoDB Date/string into Alpaca's required:
+ *
+ * YYYY-MM-DD
+ *
+ * We intentionally use UTC getters so that timezone conversion does not
+ * unexpectedly change the user's calendar date.
+ */
+function formatDateOfBirth(value: Date | string | unknown): string {
+  if (!value) {
+    throw new Error("Date of birth is required");
+  }
+
+  const date = value instanceof Date ? value : new Date(String(value));
+
+  if (Number.isNaN(date.getTime())) {
+    throw new Error("Invalid date of birth");
+  }
+
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
+
+  const formatted = `${year}-${month}-${day}`;
+
+  // Final strict YYYY-MM-DD validation.
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(formatted)) {
+    throw new Error("Invalid date of birth format");
+  }
+
+  return formatted;
+}
+
+/**
+ * Basic ISO alpha-3 country validation.
+ *
+ * We keep this list aligned with the countries currently offered
+ * by the Open Account frontend.
+ */
+const SUPPORTED_COUNTRIES = new Set([
+  "IND",
+  "USA",
+  "CAN",
+  "GBR",
+  "AUS",
+  "DEU",
+  "FRA",
+  "SGP",
+  "ARE",
+]);
+
+/**
+ * Validate a required string.
+ */
+function requiredString(
+  value: unknown,
+  fieldName: string
+): string {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new Error(`${fieldName} is required`);
+  }
+
+  return value.trim();
+}
+
+/**
+ * Convert unknown error to a readable message.
+ */
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  if (typeof error === "string") {
+    return error;
+  }
+
+  return "Trading account creation failed";
+}
+
+/* -------------------------------------------------------------------------- */
+/* GET /api/trading/accounts                                                  */
+/* -------------------------------------------------------------------------- */
+
+export async function GET() {
+  try {
+    const user = await requireAuth();
+
+    if (!user) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Unauthorized",
+        },
+        { status: 401 }
+      );
+    }
+
+    await connectDB();
+
+    /*
+     * Get accounts created by this website/user.
+     */
+    const localAccounts = await TradingAccount.find({
+      userId: user.id,
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    /*
+     * Get current account information from Alpaca.
+     */
+    const alpacaAccounts =
+      await alpacaRequest<AlpacaAccountResponse[]>(
+        "/v1/accounts",
+        {
+          method: "GET",
+        }
+      );
+
+    /*
+     * Only return Alpaca accounts that are mapped to this
+     * website user's local TradingAccount records.
+     */
+    const localProviderAccountIds = new Set(
+      localAccounts.map(
+        (account) => account.providerAccountId
+      )
+    );
+
+    const accounts = alpacaAccounts
+      .filter((account) =>
+        localProviderAccountIds.has(account.id)
+      )
+      .map((account) => {
+        const localAccount = localAccounts.find(
+          (item) =>
+            item.providerAccountId === account.id
+        );
+
+        return {
+          id: account.id,
+          providerAccountId: account.id,
+          accountNumber:
+            account.account_number || null,
+
+          provider: "alpaca",
+
+          accountType:
+            localAccount?.accountType || "paper",
+
+          status:
+            account.status ||
+            localAccount?.status ||
+            "UNKNOWN",
+
+          currency:
+            account.currency || "USD",
+
+          cash: account.cash || "0",
+          buyingPower:
+            account.buying_power || "0",
+
+          portfolioValue:
+            account.portfolio_value || "0",
+
+          equity:
+            account.equity || "0",
+
+          longMarketValue:
+            account.long_market_value || "0",
+
+          shortMarketValue:
+            account.short_market_value || "0",
+
+          initialMargin:
+            account.initial_margin || "0",
+
+          maintenanceMargin:
+            account.maintenance_margin || "0",
+
+          daytradeCount:
+            account.daytrade_count || 0,
+
+          patternDayTrader:
+            account.pattern_day_trader || false,
+
+          tradingBlocked:
+            account.trading_blocked || false,
+
+          transfersBlocked:
+            account.transfers_blocked || false,
+
+          accountBlocked:
+            account.account_blocked || false,
+
+          createdAt:
+            localAccount?.createdAt || null,
+
+          updatedAt:
+            localAccount?.updatedAt || null,
+        };
+      });
+
+    return NextResponse.json({
+      success: true,
+      accounts,
+    });
+  } catch (error) {
+    console.error(
+      "GET TRADING ACCOUNTS ERROR:",
+      error
+    );
+
+    return NextResponse.json(
+      {
+        success: false,
+        message: getErrorMessage(error),
+      },
+      { status: 500 }
+    );
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* POST /api/trading/accounts                                                 */
+/* -------------------------------------------------------------------------- */
+
+export async function POST(request: NextRequest) {
+  try {
+    /* ---------------------------------------------------------------------- */
+    /* Authentication                                                         */
+    /* ---------------------------------------------------------------------- */
+
+    const user = await requireAuth();
+
+    if (!user) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Unauthorized",
+        },
+        { status: 401 }
+      );
+    }
+
+    /* ---------------------------------------------------------------------- */
+    /* Request body                                                           */
+    /* ---------------------------------------------------------------------- */
+
+    let body: {
+      accountType?: AccountType;
+    } = {};
+
+    try {
+      body = await request.json();
+    } catch {
+      body = {};
+    }
+
+    const requestedAccountType: AccountType =
+      body.accountType === "live"
+        ? "live"
+        : "paper";
+
+    /* ---------------------------------------------------------------------- */
+    /* Database                                                               */
+    /* ---------------------------------------------------------------------- */
+
+    await connectDB();
+
+    /* ---------------------------------------------------------------------- */
+    /* User                                                                    */
+    /* ---------------------------------------------------------------------- */
+
+    const dbUser = await User.findById(user.id)
+      .select("email")
+      .lean();
+
+    if (!dbUser) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "User not found",
+        },
+        { status: 404 }
+      );
+    }
+
+    /* ---------------------------------------------------------------------- */
+    /* Trading profile                                                        */
+    /* ---------------------------------------------------------------------- */
+
+    const tradingProfile =
+      await TradingProfile.findOne({
+        userId: user.id,
+      })
+        .select("+taxId")
+        .lean();
+
+    if (!tradingProfile) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Trading profile not found. Please complete the account application first.",
+        },
+        { status: 400 }
+      );
+    }
+
+    /* ---------------------------------------------------------------------- */
+    /* Prevent duplicate account                                              */
+    /* ---------------------------------------------------------------------- */
+
+    const existingAccount =
+      await TradingAccount.findOne({
+        userId: user.id,
+        accountType: requestedAccountType,
+      }).lean();
+
+    if (existingAccount) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: `You already have a ${requestedAccountType} trading account.`,
+          account: {
+            id: existingAccount.providerAccountId,
+            providerAccountId:
+              existingAccount.providerAccountId,
+            provider: existingAccount.provider,
+            accountType:
+              existingAccount.accountType,
+            status: existingAccount.status,
+          },
+        },
+        { status: 409 }
+      );
+    }
+
+    /* ---------------------------------------------------------------------- */
+    /* Validate profile fields                                                */
+    /* ---------------------------------------------------------------------- */
+
+    const givenName = requiredString(
+      tradingProfile.givenName,
+      "Given name"
+    );
+
+    const familyName = requiredString(
+      tradingProfile.familyName,
+      "Family name"
+    );
+
+    const phoneNumber = requiredString(
+      tradingProfile.phoneNumber,
+      "Phone number"
+    );
+
+    const city = requiredString(
+      tradingProfile.city,
+      "City"
+    );
+
+    const state = requiredString(
+      tradingProfile.state,
+      "State"
+    );
+
+    const postalCode = requiredString(
+      tradingProfile.postalCode,
+      "Postal code"
+    );
+
+    const country = requiredString(
+      tradingProfile.country,
+      "Country"
+    ).toUpperCase();
+
+    const countryOfTaxResidence =
+      requiredString(
+        tradingProfile.countryOfTaxResidence,
+        "Country of tax residence"
+      ).toUpperCase();
+
+    if (!SUPPORTED_COUNTRIES.has(country)) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Country must be a valid supported ISO alpha-3 country code.",
+        },
+        { status: 422 }
+      );
+    }
+
+    if (
+      !SUPPORTED_COUNTRIES.has(
+        countryOfTaxResidence
+      )
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Country of tax residence must be a valid supported ISO alpha-3 country code.",
+        },
+        { status: 422 }
+      );
+    }
+
+    /* ---------------------------------------------------------------------- */
+    /* Street address                                                         */
+    /* ---------------------------------------------------------------------- */
+
+    if (
+      !Array.isArray(tradingProfile.streetAddress) ||
+      tradingProfile.streetAddress.length === 0 ||
+      tradingProfile.streetAddress.some(
+        (item) =>
+          typeof item !== "string" ||
+          !item.trim()
+      )
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Street address is required.",
+        },
+        { status: 422 }
+      );
+    }
+
+    const streetAddress =
+      tradingProfile.streetAddress.map(
+        (item) => item.trim()
+      );
+
+    /* ---------------------------------------------------------------------- */
+    /* Date of birth                                                          */
+    /* ---------------------------------------------------------------------- */
+
+    let dateOfBirth: string;
+
+    try {
+      dateOfBirth = formatDateOfBirth(
+        tradingProfile.dateOfBirth
+      );
+    } catch (error) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: getErrorMessage(error),
+        },
+        { status: 422 }
+      );
+    }
+
+    /*
+     * Debug information intentionally does NOT print the user's full
+     * date of birth. It only confirms the final format.
+     */
+    console.log(
+      "ALPACA DOB FORMAT:",
+      dateOfBirth.replace(/\d/g, "X")
+    );
+
+    /* ---------------------------------------------------------------------- */
+    /* Tax information                                                        */
+    /* ---------------------------------------------------------------------- */
+
+    const taxId =
+      typeof tradingProfile.taxId === "string"
+        ? tradingProfile.taxId.trim()
+        : "";
+
+    const taxIdType =
+      typeof tradingProfile.taxIdType === "string"
+        ? tradingProfile.taxIdType.trim()
+        : "";
+
+    if (!taxId) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Tax ID is required to create a trading account.",
+        },
+        { status: 422 }
+      );
+    }
+
+    if (!taxIdType) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Tax ID type is required to create a trading account.",
+        },
+        { status: 422 }
+      );
+    }
+
+    if (!/[\d]/.test(taxId)) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Tax ID must contain at least one digit.",
+        },
+        { status: 422 }
+      );
+    }
+
+    const normalizedTaxResidence =
+      countryOfTaxResidence;
+
+    /* ---------------------------------------------------------------------- */
+    /* Employment                                                             */
+    /* ---------------------------------------------------------------------- */
+
+    const allowedEmploymentStatuses = [
+      "EMPLOYED",
+      "UNEMPLOYED",
+      "RETIRED",
+      "STUDENT",
+    ];
+
+    const employmentStatus =
+      typeof tradingProfile.employmentStatus ===
+      "string"
+        ? tradingProfile.employmentStatus
+            .trim()
+            .toUpperCase()
+        : "";
+
+    if (
+      !allowedEmploymentStatuses.includes(
+        employmentStatus
+      )
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Employment status must be one of: EMPLOYED, UNEMPLOYED, RETIRED, STUDENT.",
+        },
+        { status: 422 }
+      );
+    }
+
+    /* ---------------------------------------------------------------------- */
+    /* Funding source                                                         */
+    /* ---------------------------------------------------------------------- */
+
+    if (
+      !Array.isArray(tradingProfile.fundingSource) ||
+      tradingProfile.fundingSource.length === 0
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "At least one funding source is required.",
+        },
+        { status: 422 }
+      );
+    }
+
+    const fundingSource =
+      tradingProfile.fundingSource
+        .filter(
+          (item) =>
+            typeof item === "string" &&
+            item.trim()
+        )
+        .map((item) => item.trim());
+
+    if (fundingSource.length === 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "At least one valid funding source is required.",
+        },
+        { status: 422 }
+      );
+    }
+
+    /* ---------------------------------------------------------------------- */
+    /* Risk tolerance                                                         */
+    /* ---------------------------------------------------------------------- */
+
+    const allowedRiskTolerance = [
+      "conservative",
+      "moderate",
+      "significant_risk",
+    ];
+
+    if (
+      !allowedRiskTolerance.includes(
+        tradingProfile.riskTolerance
+      )
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Invalid risk tolerance.",
+        },
+        { status: 422 }
+      );
+    }
+
+    /* ---------------------------------------------------------------------- */
+    /* Disclosures                                                            */
+    /* ---------------------------------------------------------------------- */
+
+    if (!tradingProfile.disclosures) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Required disclosures are missing.",
+        },
+        { status: 422 }
+      );
+    }
+
+    const disclosures = {
+      is_control_person:
+        Boolean(
+          tradingProfile.disclosures
+            .isControlPerson
+        ),
+
+      is_affiliated_exchange_or_finra:
+        Boolean(
+          tradingProfile.disclosures
+            .isAffiliatedExchangeOrFinra
+        ),
+
+      is_politically_exposed:
+        Boolean(
+          tradingProfile.disclosures
+            .isPoliticallyExposed
+        ),
+
+      immediate_family_exposed:
+        Boolean(
+          tradingProfile.disclosures
+            .immediateFamilyExposed
+        ),
+
+      employment_status:
+        employmentStatus,
+    };
+
+    /* ---------------------------------------------------------------------- */
+    /* Agreements                                                             */
+    /* ---------------------------------------------------------------------- */
+
+    if (!tradingProfile.agreementsAccepted) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "You must accept the required agreements before creating a trading account.",
+        },
+        { status: 422 }
+      );
+    }
+
+    const signedAt =
+      new Date().toISOString();
+
+    const ipAddress =
+      getRequestIp(request);
+
+    const agreements = [
+      {
+        agreement: "account_agreement",
+        signed_at: signedAt,
+        ip_address: ipAddress,
+      },
+      {
+        agreement: "customer_agreement",
+        signed_at: signedAt,
+        ip_address: ipAddress,
+      },
+      {
+        agreement: "margin_agreement",
+        signed_at: signedAt,
+        ip_address: ipAddress,
+      },
+    ];
+
+    /* ---------------------------------------------------------------------- */
+    /* Logging                                                                */
+    /* ---------------------------------------------------------------------- */
+
+    console.log(
+      "CREATING ALPACA ACCOUNT FOR USER:",
+      {
+        userId: user.id,
+        email: dbUser.email,
+        applicationAccountType:
+          requestedAccountType,
+        country,
+        countryOfTaxResidence:
+          normalizedTaxResidence,
+        agreementTypes:
+          agreements.map(
+            (agreement) =>
+              agreement.agreement
+          ),
+      }
+    );
+
+    /* ---------------------------------------------------------------------- */
+    /* Alpaca account payload                                                 */
+    /* ---------------------------------------------------------------------- */
+
+    const alpacaPayload = {
+      account_type: "trading",
+
+      contact: {
+        email_address: dbUser.email,
+
+        phone_number: phoneNumber,
+
+        street_address:
+          streetAddress,
+
+        city,
+
+        state,
+
+        postal_code:
+          postalCode,
+
+        country,
+      },
+
+      identity: {
+        given_name: givenName,
+
+        family_name: familyName,
+
+        /*
+         * IMPORTANT:
+         * Alpaca expects YYYY-MM-DD.
+         *
+         * Example:
+         * 2003-11-03
+         */
+        date_of_birth:
+          dateOfBirth,
+
+        tax_id: taxId,
+
+        tax_id_type:
+          taxIdType,
+
+        country_of_tax_residence:
+          normalizedTaxResidence,
+
+        funding_source:
+          fundingSource,
+      },
+
+      disclosures,
+
+      risk_tolerance:
+        tradingProfile.riskTolerance,
+
+      agreements,
+    };
+
+    /* ---------------------------------------------------------------------- */
+    /* Create account at Alpaca                                               */
+    /* ---------------------------------------------------------------------- */
+
+    const alpacaAccount =
+      await alpacaRequest<CreateAccountResponse>(
+        "/v1/accounts",
+        {
+          method: "POST",
+
+          body: JSON.stringify(
+            alpacaPayload
+          ),
+        }
+      );
+
+    if (!alpacaAccount?.id) {
+      throw new Error(
+        "Alpaca did not return a valid account ID."
+      );
+    }
+
+    /* ---------------------------------------------------------------------- */
+    /* Save account in MongoDB                                                */
+    /* ---------------------------------------------------------------------- */
+
+    const savedAccount =
+      await TradingAccount.create({
+        userId: user.id,
+
+        provider: "alpaca",
+
+        providerAccountId:
+          alpacaAccount.id,
+
+        accountType:
+          requestedAccountType,
+
+        status:
+          alpacaAccount.status ||
+          "SUBMITTED",
+      });
+
+    /* ---------------------------------------------------------------------- */
+    /* Response                                                               */
+    /* ---------------------------------------------------------------------- */
+
+    return NextResponse.json(
+      {
+        success: true,
+
+        message:
+          "Trading account created successfully.",
+
+        account: {
+          id: alpacaAccount.id,
+
+          providerAccountId:
+            alpacaAccount.id,
+
+          provider: "alpaca",
+
+          accountType:
+            savedAccount.accountType,
+
+          status:
+            alpacaAccount.status ||
+            savedAccount.status ||
+            "SUBMITTED",
+
+          accountNumber:
+            alpacaAccount.account_number ||
+            null,
+
+          currency:
+            alpacaAccount.currency ||
+            "USD",
+
+          cash:
+            alpacaAccount.cash ||
+            "0",
+
+          buyingPower:
+            alpacaAccount.buying_power ||
+            "0",
+
+          portfolioValue:
+            alpacaAccount.portfolio_value ||
+            "0",
+
+          equity:
+            alpacaAccount.equity ||
+            "0",
+        },
+      },
+      { status: 201 }
+    );
+  } catch (error) {
+    const message =
+      getErrorMessage(error);
+
+    console.error(
+      "CREATE TRADING ACCOUNT ERROR:",
+      error
+    );
+
+    /*
+     * Alpaca validation errors are generally 422.
+     * Returning 422 to the frontend is more accurate than
+     * converting them into a generic 500 error.
+     */
+    if (
+      message.startsWith(
+        "422 Unprocessable Entity:"
+      )
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message,
+        },
+        { status: 422 }
+      );
+    }
+
+    return NextResponse.json(
+      {
+        success: false,
+        message,
+      },
+      { status: 500 }
+    );
+  }
+}
+

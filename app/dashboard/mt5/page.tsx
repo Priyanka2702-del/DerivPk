@@ -1,4 +1,4 @@
-
+﻿
 "use client";
 
 import { useEffect, useState } from "react";
@@ -24,6 +24,9 @@ export default function MT5Page() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
+  const [realAccount, setRealAccount] = useState<any>(null);
+  const [realLoading, setRealLoading] = useState(true);
+  const [realError, setRealError] = useState("");
   async function loadAccounts() {
     try {
       setLoading(true);
@@ -74,6 +77,43 @@ export default function MT5Page() {
     loadAccounts();
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadRealAccount() {
+      try {
+        setRealLoading(true);
+        setRealError("");
+
+        const response = await fetch("/api/trading/real/requests", {
+          method: "GET",
+          cache: "no-store",
+        });
+
+        const data = await response.json();
+
+        if (!response.ok || !data?.success) {
+          throw new Error(data?.message || data?.error || "Unable to load your real account.");
+        }
+
+        if (!cancelled) setRealAccount(data.account);
+      } catch (err) {
+        if (!cancelled) {
+          setRealError(
+            err instanceof Error ? err.message : "Unable to load your real account."
+          );
+        }
+      } finally {
+        if (!cancelled) setRealLoading(false);
+      }
+    }
+
+    loadRealAccount();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const paperAccount = accounts.find(
     (account) =>
       account.accountType === "paper"
@@ -108,7 +148,7 @@ export default function MT5Page() {
             href="/dashboard"
             className="text-sm text-text-muted transition hover:text-text"
           >
-            ← Back to Dashboard
+            â† Back to Dashboard
           </Link>
 
           <h1 className="mt-4 font-display text-3xl font-semibold text-text">
@@ -261,128 +301,98 @@ export default function MT5Page() {
 
             {/* ====================================== */}
             {/* REAL ACCOUNT */}
-            {/* ====================================== */}
+<section className="rounded-xl border border-border bg-surface p-6">
+  <div className="flex items-start justify-between gap-3">
+    <div>
+      <h2 className="text-xl font-semibold text-text">Real Account</h2>
+      <p className="mt-1 text-sm text-text-muted">
+        Submit trade requests for administrator review.
+      </p>
+    </div>
+    <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
+      Real
+    </span>
+  </div>
 
-            <section className="rounded-xl border border-border bg-surface p-6">
+  {realLoading ? (
+    <p className="mt-6 text-sm text-text-muted">
+      Loading your internal account...
+    </p>
+  ) : realError ? (
+    <div className="mt-6 rounded-lg border border-border bg-background p-4">
+      <p className="text-sm text-red-500">{realError}</p>
+      <button
+        type="button"
+        onClick={() => window.location.reload()}
+        className="mt-3 rounded-lg bg-accent-2 px-4 py-2 text-sm font-semibold text-white"
+      >
+        Retry
+      </button>
+    </div>
+  ) : realAccount ? (
+    <>
+      <div className="mt-6 space-y-4">
+        <div className="flex items-start justify-between gap-4 border-b border-border pb-3">
+          <span className="text-sm text-text-muted">Account type</span>
+          <span className="text-right text-sm font-medium text-text">
+            Internal request account
+          </span>
+        </div>
 
-              <div className="flex items-start justify-between">
+        <div className="flex items-start justify-between gap-4 border-b border-border pb-3">
+          <span className="text-sm text-text-muted">Account ID</span>
+          <span className="max-w-[65%] break-all text-right text-sm font-medium text-text">
+            {realAccount.id || realAccount._id || "Not available"}
+          </span>
+        </div>
 
-                <div>
-                  <h2 className="text-xl font-semibold text-text">
-                    Real Account
-                  </h2>
+        <div className="flex items-center justify-between gap-4">
+          <span className="text-sm text-text-muted">Status</span>
+          <span className="text-sm font-semibold text-emerald-600">
+            {realAccount.status || "Unknown"}
+          </span>
+        </div>
+      </div>
 
-                  <p className="mt-1 text-sm text-text-muted">
-                    Trade using your real trading
-                    account.
-                  </p>
-                </div>
+      <Link
+        href="/dashboard/mt5/real"
+        className="mt-6 block w-full rounded-lg bg-accent-2 px-5 py-3 text-center text-sm font-semibold text-white transition hover:opacity-90"
+      >
+        Open Real Account
+      </Link>
 
-                <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
-                  Real
-                </span>
+      <button
+        type="button"
+        disabled
+        title="Payment gateway is not integrated yet"
+        className="mt-3 block w-full cursor-not-allowed rounded-lg border border-border px-5 py-3 text-center text-sm font-semibold text-text-muted opacity-60"
+      >
+        Add Money â€” Coming Soon
+      </button>
 
-              </div>
-
-              {liveAccount ? (
-                <>
-                  <div className="mt-6 space-y-4">
-
-                    <div className="flex justify-between border-b border-border pb-3">
-                      <span className="text-sm text-text-muted">
-                        Login
-                      </span>
-
-                      <span className="text-sm font-medium text-text">
-                        {liveAccount.accountNumber ||
-                          liveAccount.providerAccountId}
-                      </span>
-                    </div>
-
-                    <div className="flex justify-between border-b border-border pb-3">
-                      <span className="text-sm text-text-muted">
-                        Server
-                      </span>
-
-                      <span className="text-sm font-medium text-text">
-                        Live
-                      </span>
-                    </div>
-
-                    <div className="flex justify-between border-b border-border pb-3">
-                      <span className="text-sm text-text-muted">
-                        Balance
-                      </span>
-
-                      <span className="text-sm font-medium text-text">
-                        {formatMoney(
-                          liveAccount.balance,
-                          liveAccount.currency
-                        )}
-                      </span>
-                    </div>
-
-                    <div className="flex justify-between border-b border-border pb-3">
-                      <span className="text-sm text-text-muted">
-                        Equity
-                      </span>
-
-                      <span className="text-sm font-medium text-text">
-                        {formatMoney(
-                          liveAccount.equity,
-                          liveAccount.currency
-                        )}
-                      </span>
-                    </div>
-
-                    <div className="flex justify-between">
-                      <span className="text-sm text-text-muted">
-                        Status
-                      </span>
-
-                      <span className="text-sm font-medium text-emerald-600">
-                        {liveAccount.status}
-                      </span>
-                    </div>
-
-                  </div>
-
-                  <Link
-                    href="/dashboard/mt5/real"
-                    className="mt-6 block w-full rounded-lg bg-accent-2 px-5 py-3 text-center text-sm font-semibold text-white transition hover:opacity-90"
-                  >
-                    Open Real Account
-                  </Link>
-                </>
-              ) : (
-                <>
-                  <div className="mt-8 rounded-lg border border-border bg-background p-5 text-center">
-
-                    <p className="text-sm text-text-muted">
-                      No real account found.
-                    </p>
-
-                    <p className="mt-2 text-xs text-text-muted">
-                      Complete your account profile
-                      to create a real trading account.
-                    </p>
-
-                  </div>
-
-                  {/* IMPORTANT:
-                      Real account must use type=live
-                  */}
-
-                  <Link
-                    href="/open-account?type=live"
-                    className="mt-6 block w-full rounded-lg bg-accent-2 px-5 py-3 text-center text-sm font-semibold text-white transition hover:opacity-90"
-                  >
-                    Open Real Account
-                  </Link>
-                </>
-              )}
-
-            </section>
+      <p className="mt-3 text-xs leading-5 text-text-muted">
+        Trade requests require administrator review. Approval does not execute a market order. Deposits remain unavailable until a payment gateway is integrated.
+      </p>
+    </>
+  ) : (
+    <div className="mt-6 rounded-lg border border-border bg-background p-4">
+      <h3 className="text-base font-semibold text-text">
+        Create Your Trading Request Account
+      </h3>
+      <p className="mt-2 text-sm leading-6 text-text-muted">
+        You have not created your internal trade-request account yet.
+        Create it when you are ready to submit trade requests for administrator review.
+        This is not an Alpaca brokerage account and does not execute live market orders.
+      </p>
+      <Link
+        href="/dashboard/mt5/real"
+        className="mt-4 block w-full rounded-lg bg-accent-2 px-5 py-3 text-center text-sm font-semibold text-white transition hover:opacity-90"
+      >
+        Create Trading Account
+      </Link>
+    </div>
+  )}
+</section>
 
           </div>
         )}
