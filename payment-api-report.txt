@@ -1,0 +1,979 @@
+﻿
+========== D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\api\payments\create\route.ts ==========
+
+
+// app/api/payments/create/route.ts
+
+import { randomUUID } from "node:crypto";
+import { NextResponse } from "next/server";
+import mongoose from "mongoose";
+
+import { connectDB } from "@/lib/db";
+import { requireAuth } from "@/lib/session";
+import Payment, { type CryptoCurrency } from "@/models/Payment";
+
+export const runtime = "nodejs";
+
+const OPEXGT_PAYMENT_URL = "https://opexgt.com/api/v1/payment";
+
+const ALLOWED_CURRENCIES: CryptoCurrency[] = [
+  "USDT",
+  "BTC",
+  "ETH",
+];
+
+function jsonError(message: string, status: number) {
+  return NextResponse.json(
+    { success: false, message },
+    { status }
+  );
+}
+
+function isObject(
+  value: unknown
+): value is Record<string, unknown> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value)
+  );
+}
+
+export async function POST(request: Request) {
+  try {
+    const mode = process.env.OPEXGT_MODE;
+
+    if (mode !== "mock" && mode !== "live") {
+      return jsonError(
+        "Payment mode is not configured. Set OPEXGT_MODE to mock or live.",
+        503
+      );
+    }
+
+    const user = await requireAuth();
+
+    if (!user) {
+      return jsonError("Unauthorized.", 401);
+    }
+
+    if (!mongoose.isValidObjectId(user.id)) {
+      return jsonError("Invalid user session.", 401);
+    }
+
+    let body: unknown;
+
+    try {
+      body = await request.json();
+    } catch {
+      return jsonError("Invalid JSON body.", 400);
+    }
+
+    if (!isObject(body)) {
+      return jsonError("Invalid request body.", 400);
+    }
+
+    const amount = body.amount;
+    const requestedCurrency = body.currency ?? "USDT";
+
+    if (
+      typeof amount !== "number" ||
+      !Number.isFinite(amount) ||
+      amount < 1 ||
+      amount > 1_000_000 ||
+      !Number.isSafeInteger(Math.round(amount * 100))
+    ) {
+      return jsonError(
+        "Amount must be between $1 and $1,000,000.",
+        400
+      );
+    }
+
+    if (
+      typeof requestedCurrency !== "string" ||
+      !ALLOWED_CURRENCIES.includes(
+        requestedCurrency as CryptoCurrency
+      )
+    ) {
+      return jsonError(
+        "Currency must be USDT, BTC, or ETH.",
+        400
+      );
+    }
+
+    const cryptoCurrency =
+      requestedCurrency as CryptoCurrency;
+
+    const amountCents = Math.round(amount * 100);
+
+    await connectDB();
+
+    const userId = new mongoose.Types.ObjectId(user.id);
+
+    // MOCK MODE: creates a database record only.
+    // No request is sent to OpexGT and no real payment occurs.
+    if (mode === "mock") {
+      const orderId = `mock_${randomUUID()}`;
+
+      const payment = await Payment.create({
+        userId,
+        purpose: "DEPOSIT",
+        amountCents,
+        currency: "USD",
+        status: "PENDING",
+        provider: "OPEXGT_MOCK",
+        providerOrderId: orderId,
+      });
+
+      return NextResponse.json(
+        {
+          success: true,
+          mode: "mock",
+          message:
+            "Mock payment record created. No crypto payment was initiated.",
+          payment: {
+            id: payment._id.toString(),
+            orderId,
+            purpose: payment.purpose,
+            amountUsd: amountCents / 100,
+            currency: "USD",
+            status: payment.status,
+            provider: payment.provider,
+            createdAt: payment.createdAt,
+          },
+        },
+        { status: 201 }
+      );
+    }
+
+    // LIVE MODE: use the existing environment variable name.
+    // OPEXGT_API_KEY is supported as an alternative.
+    const apiKey =
+      process.env.OPEXGT_API_KEY ??
+      process.env.OpexGT_Lve_key;
+
+    if (!apiKey?.trim()) {
+      return jsonError(
+        "OpexGT live mode is enabled, but the API key is missing.",
+        503
+      );
+    }
+
+    const webhookUrl = process.env.OPEXGT_WEBHOOK_URL;
+
+    if (!webhookUrl) {
+      return jsonError(
+        "OPEXGT_WEBHOOK_URL is missing. Configure and test the webhook before enabling live payments.",
+        503
+      );
+    }
+
+    // Validate the webhook URL before sending it to the provider.
+    try {
+      const parsedWebhook = new URL(webhookUrl);
+
+      if (
+        parsedWebhook.protocol !== "https:" ||
+        parsedWebhook.pathname !==
+          "/api/payments/webhook" ||
+        parsedWebhook.search ||
+        parsedWebhook.hash
+      ) {
+        return jsonError(
+          "OPEXGT_WEBHOOK_URL must be an HTTPS URL pointing to /api/payments/webhook.",
+          503
+        );
+      }
+    } catch {
+      return jsonError(
+        "OPEXGT_WEBHOOK_URL is invalid.",
+        503
+      );
+    }
+
+    const orderId = `dp_${randomUUID()}`;
+
+    // Create the local pending record before contacting OpexGT.
+    const payment = await Payment.create({
+      userId,
+      purpose: "DEPOSIT",
+      amountCents,
+      currency: "USD",
+      status: "PENDING",
+      provider: "OPEXGT",
+      providerOrderId: orderId,
+      cryptoCurrency,
+    });
+
+    let providerResponse: Response;
+
+    try {
+      providerResponse = await fetch(OPEXGT_PAYMENT_URL, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({
+          amount: amountCents / 100,
+          currency: cryptoCurrency,
+          order_id: orderId,
+          webhook_url: webhookUrl,
+        }),
+        cache: "no-store",
+        signal: AbortSignal.timeout(15_000),
+      });
+    } catch (error) {
+      // A timeout does not prove that the provider failed.
+      // Keep the payment pending until it can be reconciled.
+      console.error("OPEXGT_CREATE_NETWORK_ERROR", {
+        paymentId: payment._id.toString(),
+        errorName:
+          error instanceof Error
+            ? error.name
+            : "UnknownError",
+      });
+
+      return NextResponse.json(
+        {
+          success: false,
+          mode: "live",
+          message:
+            "Provider response could not be confirmed. Check the OpexGT dashboard before retrying.",
+          paymentId: payment._id.toString(),
+          orderId,
+          status: "PENDING",
+        },
+        { status: 502 }
+      );
+    }
+
+    let rawResponse: unknown;
+
+    try {
+      rawResponse = await providerResponse.json();
+    } catch {
+      rawResponse = null;
+    }
+
+    if (
+      !providerResponse.ok ||
+      !isObject(rawResponse)
+    ) {
+      console.error("OPEXGT_CREATE_REJECTED", {
+        paymentId: payment._id.toString(),
+        httpStatus: providerResponse.status,
+      });
+
+      return NextResponse.json(
+        {
+          success: false,
+          mode: "live",
+          message:
+            "OpexGT did not return a valid response. Check the provider dashboard before retrying.",
+          paymentId: payment._id.toString(),
+          orderId,
+          status: "PENDING",
+        },
+        { status: 502 }
+      );
+    }
+
+    // According to the supplied OpexGT documentation,
+    // a successful creation response must contain success: true.
+    if (rawResponse.success !== true) {
+      console.error(
+        "OPEXGT_PAYMENT_CREATE_NOT_CONFIRMED",
+        {
+          paymentId: payment._id.toString(),
+          httpStatus: providerResponse.status,
+        }
+      );
+
+      return NextResponse.json(
+        {
+          success: false,
+          mode: "live",
+          message:
+            "OpexGT did not confirm payment creation. Check the provider dashboard before retrying.",
+          paymentId: payment._id.toString(),
+          orderId,
+          status: "PENDING",
+        },
+        { status: 502 }
+      );
+    }
+
+    const data = isObject(rawResponse.data)
+      ? rawResponse.data
+      : rawResponse;
+
+    const providerPaymentId =
+      typeof data.payment_id === "string"
+        ? data.payment_id
+        : typeof data.id === "string"
+          ? data.id
+          : null;
+
+    const responseOrderId =
+      typeof data.order_id === "string"
+        ? data.order_id
+        : null;
+
+    const checkoutUrl =
+      typeof data.checkout_url === "string"
+        ? data.checkout_url
+        : null;
+
+    const depositAddress =
+      typeof data.address === "string"
+        ? data.address
+        : undefined;
+
+    const responseCurrency =
+      typeof data.currency === "string"
+        ? data.currency.toUpperCase()
+        : null;
+
+    const cryptoAmount =
+      typeof data.amount_crypto === "string" ||
+      typeof data.amount_crypto === "number"
+        ? String(data.amount_crypto)
+        : undefined;
+
+    const expiresAt =
+      typeof data.expires_at === "string" &&
+      Number.isFinite(Date.parse(data.expires_at))
+        ? new Date(data.expires_at)
+        : undefined;
+
+    let validCheckoutUrl = false;
+
+    if (checkoutUrl) {
+      try {
+        const parsed = new URL(checkoutUrl);
+
+        validCheckoutUrl =
+          parsed.protocol === "https:" &&
+          parsed.hostname === "opexgt.com" &&
+          !parsed.username &&
+          !parsed.password;
+      } catch {
+        validCheckoutUrl = false;
+      }
+    }
+
+    // Reject unexpected or incomplete provider responses.
+    if (
+      !providerPaymentId?.trim() ||
+      responseOrderId !== orderId ||
+      !validCheckoutUrl ||
+      responseCurrency !== cryptoCurrency
+    ) {
+      console.error(
+        "OPEXGT_CREATE_INVALID_RESPONSE",
+        {
+          paymentId: payment._id.toString(),
+          hasProviderPaymentId:
+            Boolean(providerPaymentId),
+          orderMatched: responseOrderId === orderId,
+          validCheckoutUrl,
+          currencyMatched:
+            responseCurrency === cryptoCurrency,
+        }
+      );
+
+      // Do not mark failed or completed automatically.
+      // Reconcile this payment using the provider dashboard.
+      return NextResponse.json(
+        {
+          success: false,
+          mode: "live",
+          message:
+            "OpexGT returned an unexpected response. The payment remains pending and needs reconciliation.",
+          paymentId: payment._id.toString(),
+          orderId,
+          status: "PENDING",
+        },
+        { status: 502 }
+      );
+    }
+
+    payment.providerPaymentId = providerPaymentId;
+payment.checkoutUrl = checkoutUrl ?? undefined;    payment.depositAddress = depositAddress;
+    payment.cryptoCurrency = cryptoCurrency;
+    payment.cryptoAmount = cryptoAmount;
+    payment.expiresAt = expiresAt;
+
+    await payment.save();
+
+    return NextResponse.json(
+      {
+        success: true,
+        mode: "live",
+        message:
+          "Payment session created. Complete checkout to pay.",
+        payment: {
+          id: payment._id.toString(),
+          orderId,
+          providerPaymentId,
+          purpose: payment.purpose,
+          amountUsd: amountCents / 100,
+          currency: "USD",
+          cryptoCurrency: payment.cryptoCurrency,
+          cryptoAmount: payment.cryptoAmount,
+          depositAddress: payment.depositAddress,
+          checkoutUrl: payment.checkoutUrl,
+          expiresAt: payment.expiresAt,
+          status: payment.status,
+          createdAt: payment.createdAt,
+        },
+      },
+      { status: 201 }
+    );
+  } catch (error) {
+    console.error("PAYMENT_CREATE_FAILED", {
+      errorName:
+        error instanceof Error
+          ? error.name
+          : "UnknownError",
+      message:
+        error instanceof Error
+          ? error.message
+          : "Unknown error",
+    });
+
+    return jsonError(
+      "Unable to create payment.",
+      500
+    );
+  }
+}
+
+========== D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\api\payments\history\route.ts ==========
+
+
+import { NextResponse } from "next/server";
+import mongoose from "mongoose";
+import { connectDB } from "@/lib/db";
+import { requireAuth } from "@/lib/session";
+import Payment from "@/models/Payment";
+import WalletLedger from "@/models/WalletLedger";
+
+export const runtime = "nodejs";
+
+export async function GET() {
+  try {
+    // 1. Authenticate the user
+    const user = await requireAuth();
+
+    if (!user) {
+      return NextResponse.json(
+        { error: "Unauthorized" },
+        { status: 401 }
+      );
+    }
+
+    // 2. Validate user ID
+    if (!mongoose.isValidObjectId(user.id)) {
+      return NextResponse.json(
+        { error: "Invalid user session." },
+        { status: 401 }
+      );
+    }
+
+    // 3. Connect to MongoDB
+    await connectDB();
+
+    const userId = new mongoose.Types.ObjectId(user.id);
+
+    // 4. Fetch payments, wallet balance and history
+    const [payments, ledger, depositTotals, ledgerEntries] =
+      await Promise.all([
+        Payment.find({ userId })
+          .select(
+            "purpose amountCents currency status provider providerPaymentId providerOrderId checkoutUrl depositAddress cryptoCurrency cryptoAmount txHash expiresAt tradeRequestId createdAt updatedAt"
+          )
+          .sort({ createdAt: -1 })
+          .limit(50)
+          .lean(),
+
+        // Wallet balance comes from ledger entries.
+        // Only CREDIT entries increase the displayed balance.
+        WalletLedger.aggregate([
+          {
+            $match: {
+              userId,
+              currency: "USD",
+            },
+          },
+          {
+            $group: {
+              _id: null,
+              balanceCents: {
+                $sum: {
+                  $cond: [
+                    { $eq: ["$type", "CREDIT"] },
+                    "$amountCents",
+                    0,
+                  ],
+                },
+              },
+            },
+          },
+        ]),
+
+        // Count only completed USD deposits.
+        Payment.aggregate([
+          {
+            $match: {
+              userId,
+              purpose: "DEPOSIT",
+              status: "COMPLETED",
+              currency: "USD",
+            },
+          },
+          {
+            $group: {
+              _id: null,
+              totalDepositedCents: {
+                $sum: "$amountCents",
+              },
+              completedDepositCount: {
+                $sum: 1,
+              },
+            },
+          },
+        ]),
+
+        // Latest wallet ledger entries
+        WalletLedger.find({ userId })
+          .select(
+            "paymentId type amountCents currency description createdAt"
+          )
+          .sort({ createdAt: -1 })
+          .limit(50)
+          .lean(),
+      ]);
+
+    // 5. Prepare wallet totals
+    const balanceCents = ledger[0]?.balanceCents ?? 0;
+    const totalDepositedCents =
+      depositTotals[0]?.totalDepositedCents ?? 0;
+    const completedDepositCount =
+      depositTotals[0]?.completedDepositCount ?? 0;
+
+    // 6. Return payment history and wallet summary
+    return NextResponse.json({
+      success: true,
+      wallet: {
+        currency: "USD",
+        balanceCents,
+        balanceUsd: balanceCents / 100,
+        totalDepositedCents,
+        totalDepositedUsd: totalDepositedCents / 100,
+        completedDepositCount,
+      },
+      payments,
+      ledger: ledgerEntries,
+    });
+  } catch (error) {
+    // Log the real error in the server terminal for debugging.
+    console.error("PAYMENT_HISTORY_FETCH_FAILED:", {
+      name:
+        error instanceof Error ? error.name : "UnknownError",
+      message:
+        error instanceof Error ? error.message : String(error),
+      stack:
+        error instanceof Error ? error.stack : undefined,
+    });
+
+    return NextResponse.json(
+      { error: "Unable to fetch wallet and payment history." },
+      { status: 500 }
+    );
+  }
+}
+
+
+========== D:\one Drive\OneDrive\Documents\Desktop\deriv pk\DerivPk\app\api\payments\webhook\route.ts ==========
+
+
+import { createHmac, timingSafeEqual } from "node:crypto";
+import mongoose from "mongoose";
+import { NextResponse } from "next/server";
+
+import { connectDB } from "@/lib/db";
+import Payment, { type PaymentStatus } from "@/models/Payment";
+import WalletLedger from "@/models/WalletLedger";
+
+export const runtime = "nodejs";
+
+const OPEXGT_STATUS_URL = "https://opexgt.com/api/v1/payment";
+
+type ProviderStatus = {
+  id?: unknown;
+  payment_id?: unknown;
+  order_id?: unknown;
+  amount?: unknown;
+  currency?: unknown;
+  status?: unknown;
+  tx_hash?: unknown;
+};
+
+function reply(message: string, status: number) {
+  return NextResponse.json(
+    { success: status >= 200 && status < 300, message },
+    { status }
+  );
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function verifySignature(
+  rawBody: Buffer,
+  signature: string | null,
+  secret: string
+): boolean {
+  if (!signature?.startsWith("sha512=")) return false;
+
+  const expected = `sha512=${createHmac("sha512", secret)
+    .update(rawBody)
+    .digest("hex")}`;
+
+  const expectedBuffer = Buffer.from(expected, "utf8");
+  const receivedBuffer = Buffer.from(signature, "utf8");
+
+  return (
+    expectedBuffer.length === receivedBuffer.length &&
+    timingSafeEqual(expectedBuffer, receivedBuffer)
+  );
+}
+
+function amountMatches(value: unknown, amountCents: number): boolean {
+  return (
+    typeof value === "number" &&
+    Number.isFinite(value) &&
+    Math.round(value * 100) === amountCents
+  );
+}
+
+function isFinalStatus(status: PaymentStatus): boolean {
+  return [
+    "COMPLETED",
+    "EXPIRED",
+    "FAILED",
+    "CANCELLED",
+    "AMOUNT_MISMATCH",
+  ].includes(status);
+}
+
+export async function POST(request: Request) {
+  try {
+    // OPEX_WEBHOOK_SECRET is the name shown in OpexGT documentation.
+    // The other names keep compatibility with your current deployment.
+    const secret =
+      process.env.OPEX_WEBHOOK_SECRET ??
+      process.env.OPEXGT_SIGNING_SECRET ??
+      process.env.OpexGT_Signing_secret;
+
+    if (!secret) {
+      console.error("OPEXGT_WEBHOOK_SECRET_MISSING");
+      return reply("Webhook is not configured.", 503);
+    }
+
+    // Verify the signature against the original, unmodified request body.
+    const rawBody = Buffer.from(await request.arrayBuffer());
+    const signature = request.headers.get("x-opex-signature");
+
+    if (!verifySignature(rawBody, signature, secret)) {
+      return reply("Invalid webhook signature.", 401);
+    }
+
+    let payload: unknown;
+
+    try {
+      payload = JSON.parse(rawBody.toString("utf8"));
+    } catch {
+      return reply("Invalid JSON payload.", 400);
+    }
+
+    if (!isObject(payload) || typeof payload.event !== "string") {
+      return reply("Invalid webhook payload.", 400);
+    }
+
+    if (payload.event === "webhook.test") {
+      return reply("Webhook signature verified.", 200);
+    }
+
+    const supportedEvents = new Set([
+      "payment.completed",
+      "payment.expired",
+      "payment.amount_mismatch",
+    ]);
+
+    if (!supportedEvents.has(payload.event)) {
+      return reply("Event ignored.", 200);
+    }
+
+    const providerPaymentId = payload.payment_id;
+    const orderId = payload.order_id;
+
+    if (
+      typeof providerPaymentId !== "string" ||
+      !providerPaymentId ||
+      typeof orderId !== "string" ||
+      !orderId
+    ) {
+      return reply("Missing payment or order identifier.", 400);
+    }
+
+    await connectDB();
+
+    const payment = await Payment.findOne({
+      provider: "OPEXGT",
+      providerPaymentId,
+      providerOrderId: orderId,
+      purpose: "DEPOSIT",
+    });
+
+    if (!payment) {
+      // A retry allows the create-payment request time to save its IDs.
+      console.error("OPEXGT_WEBHOOK_PAYMENT_NOT_FOUND", {
+        providerPaymentId,
+        orderId,
+      });
+      return reply("Payment record not found; retry later.", 503);
+    }
+
+    if (isFinalStatus(payment.status)) {
+      return reply("Payment already processed.", 200);
+    }
+
+    const apiKey =
+      process.env.OPEXGT_API_KEY ??
+      process.env.OpexGT_Lve_key;
+
+    if (!apiKey) {
+      console.error("OPEXGT_STATUS_API_KEY_MISSING");
+      return reply("Provider verification is not configured.", 503);
+    }
+
+    // Never trust the webhook event alone. Check the payment directly
+    // with OpexGT using its documented GET /api/v1/payment/:id endpoint.
+    let statusResponse: Response;
+
+    try {
+      statusResponse = await fetch(
+        `${OPEXGT_STATUS_URL}/${encodeURIComponent(providerPaymentId)}`,
+        {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            Accept: "application/json",
+          },
+          cache: "no-store",
+          signal: AbortSignal.timeout(10_000),
+        }
+      );
+    } catch (error) {
+      console.error("OPEXGT_STATUS_LOOKUP_FAILED", {
+        paymentId: payment._id.toString(),
+        errorName: error instanceof Error ? error.name : "UnknownError",
+      });
+      return reply("Could not verify provider status; retry later.", 503);
+    }
+
+    if (!statusResponse.ok) {
+      console.error("OPEXGT_STATUS_LOOKUP_REJECTED", {
+        paymentId: payment._id.toString(),
+        httpStatus: statusResponse.status,
+      });
+      return reply("Provider status verification failed; retry later.", 503);
+    }
+
+    let statusPayload: unknown;
+
+    try {
+      statusPayload = await statusResponse.json();
+    } catch {
+      return reply("Provider returned invalid status data.", 503);
+    }
+
+    if (!isObject(statusPayload)) {
+      return reply("Provider returned invalid status data.", 503);
+    }
+
+    // Documentation shows a flat response. Also tolerate a data wrapper.
+    const providerData = (
+      isObject(statusPayload.data) ? statusPayload.data : statusPayload
+    ) as ProviderStatus;
+
+    const confirmedPaymentId =
+      typeof providerData.id === "string"
+        ? providerData.id
+        : typeof providerData.payment_id === "string"
+          ? providerData.payment_id
+          : null;
+
+    const confirmedOrderId =
+      typeof providerData.order_id === "string"
+        ? providerData.order_id
+        : null;
+
+    const confirmedStatus =
+      typeof providerData.status === "string"
+        ? providerData.status.toLowerCase()
+        : "";
+
+    const confirmedCurrency =
+      typeof providerData.currency === "string"
+        ? providerData.currency.toUpperCase()
+        : "";
+
+    // Do not process a response for a different payment or order.
+    if (
+      confirmedPaymentId !== providerPaymentId ||
+      confirmedOrderId !== orderId
+    ) {
+      console.error("OPEXGT_STATUS_IDENTIFIER_MISMATCH", {
+        paymentId: payment._id.toString(),
+      });
+      return reply("Provider identifiers did not match; review required.", 503);
+    }
+
+    let nextStatus: PaymentStatus;
+
+    if (payload.event === "payment.amount_mismatch") {
+      // The provider docs say this event requires manual handling.
+      // Never credit the wallet for a mismatch.
+      if (
+        confirmedStatus !== "pending" &&
+        confirmedStatus !== "completed" &&
+        confirmedStatus !== "failed"
+      ) {
+        return reply("Mismatch needs manual reconciliation.", 503);
+      }
+
+      nextStatus = "AMOUNT_MISMATCH";
+    } else if (payload.event === "payment.completed") {
+      if (confirmedStatus !== "completed") {
+        return reply("Provider has not confirmed completion; retry later.", 503);
+      }
+
+      // OpexGT's status documentation uses amount in USD and currency
+      // for the selected crypto currency.
+      if (
+        confirmedCurrency !== payment.cryptoCurrency ||
+        !amountMatches(providerData.amount, payment.amountCents)
+      ) {
+        console.error("OPEXGT_COMPLETED_AMOUNT_OR_CURRENCY_MISMATCH", {
+          paymentId: payment._id.toString(),
+          currencyMatched: confirmedCurrency === payment.cryptoCurrency,
+          amountMatched: amountMatches(
+            providerData.amount,
+            payment.amountCents
+          ),
+        });
+        return reply("Completed payment needs manual reconciliation.", 503);
+      }
+
+      nextStatus = "COMPLETED";
+    } else {
+      if (confirmedStatus !== "expired") {
+        return reply("Provider has not confirmed expiry; retry later.", 503);
+      }
+
+      nextStatus = "EXPIRED";
+    }
+
+    const txHash =
+      typeof providerData.tx_hash === "string"
+        ? providerData.tx_hash
+        : typeof payload.tx_hash === "string"
+          ? payload.tx_hash
+          : undefined;
+
+    // Payment status and wallet credit must succeed together.
+    // MongoDB transactions require a replica set / transaction-capable cluster.
+    const session = await mongoose.startSession();
+    let alreadyProcessed = false;
+
+    try {
+      await session.withTransaction(async () => {
+        const update: {
+          status: PaymentStatus;
+          creditedAt?: Date;
+          txHash?: string;
+        } = { status: nextStatus };
+
+        if (txHash) update.txHash = txHash;
+
+        if (nextStatus === "COMPLETED") {
+          update.creditedAt = new Date();
+        }
+
+        const result = await Payment.updateOne(
+          { _id: payment._id, status: "PENDING" },
+          { $set: update },
+          { session }
+        );
+
+        if (result.modifiedCount !== 1) {
+          const current = await Payment.findById(payment._id)
+            .session(session)
+            .select("status")
+            .lean();
+
+          if (current && isFinalStatus(current.status as PaymentStatus)) {
+            alreadyProcessed = true;
+            return;
+          }
+
+          throw new Error("PAYMENT_STATUS_CHANGED_CONCURRENTLY");
+        }
+
+        if (nextStatus === "COMPLETED") {
+          // WalletLedger has a unique paymentId index, preventing a
+          // second credit for the same payment.
+          await WalletLedger.create(
+            [
+              {
+                userId: payment.userId,
+                paymentId: payment._id,
+                type: "CREDIT",
+                amountCents: payment.amountCents,
+                currency: "USD",
+                description: `Verified OpexGT deposit (${orderId})`,
+              },
+            ],
+            { session }
+          );
+        }
+      });
+    } finally {
+      await session.endSession();
+    }
+
+    return reply(
+      alreadyProcessed
+        ? "Payment already processed."
+        : nextStatus === "COMPLETED"
+          ? "Payment verified and wallet credited."
+          : nextStatus === "AMOUNT_MISMATCH"
+            ? "Amount mismatch recorded; manual review required."
+            : "Payment status updated.",
+      200
+    );
+  } catch (error) {
+    console.error("OPEXGT_WEBHOOK_PROCESSING_FAILED", {
+      errorName: error instanceof Error ? error.name : "UnknownError",
+      message: error instanceof Error ? error.message : "Unknown error",
+    });
+
+    return reply("Unable to process webhook; retry or review logs.", 500);
+  }
+}
+
