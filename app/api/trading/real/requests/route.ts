@@ -1,4 +1,6 @@
+
 import { NextResponse } from "next/server";
+
 import { connectDB } from "@/lib/db";
 import { requireAuth } from "@/lib/session";
 import RealTradingAccount from "@/models/RealTradingAccount";
@@ -23,20 +25,8 @@ export async function GET() {
 
     await connectDB();
 
-    const account = await RealTradingAccount.findOne({ userId: user.id });
-
-    console.log("[REAL ACCOUNT DEBUG]", {
-      currentUserId: user.id,
-      accountFound: Boolean(account),
-      accountUserIdMatches: account
-        ? account.userId.toString() === user.id
-        : false,
-      hasFullName: Boolean(account?.fullName?.trim()),
-      hasEmail: Boolean(account?.email?.trim()),
-      hasPhone: Boolean(account?.phone?.trim()),
-      hasCountry: Boolean(account?.country?.trim()),
-      consentAccepted: Boolean(account?.consentAccepted),
-      status: account?.status ?? null,
+    const account = await RealTradingAccount.findOne({
+      userId: user.id,
     });
 
     const profileComplete = Boolean(
@@ -52,12 +42,16 @@ export async function GET() {
         success: true,
         account: null,
         requests: [],
-        notice: "Complete the account registration form before submitting a trade request.",
+        notice:
+          "Complete the account registration form before submitting a trade request.",
       });
     }
 
     if (account.status !== "ACTIVE") {
-      return errorResponse("Your internal trading account is suspended.", 403);
+      return errorResponse(
+        "Your internal trading account is suspended.",
+        403
+      );
     }
 
     const requests = await RealTradeRequest.find({
@@ -78,11 +72,14 @@ export async function GET() {
       },
       requests,
       notice:
-        "Requests are reviewed by an administrator. Approval does not execute a market order.",
+        "OpexGT payment is required for a trade request. Payment confirmation does not execute a broker order; requests remain subject to administrator review.",
     });
   } catch (error) {
     console.error("REAL REQUESTS GET ERROR:", error);
-    return errorResponse("Unable to load real trading requests.", 500);
+    return errorResponse(
+      "Unable to load real trading requests.",
+      500
+    );
   }
 }
 
@@ -137,7 +134,9 @@ export async function POST(request: Request) {
         : "";
 
     if (!/^[A-Z0-9.-]{1,20}$/.test(symbol)) {
-      return errorResponse("Enter a valid symbol (maximum 20 characters).");
+      return errorResponse(
+        "Enter a valid symbol (maximum 20 characters)."
+      );
     }
 
     if (side !== "BUY" && side !== "SELL") {
@@ -145,7 +144,9 @@ export async function POST(request: Request) {
     }
 
     if (orderType !== "MARKET" && orderType !== "LIMIT") {
-      return errorResponse("Order type must be MARKET or LIMIT.");
+      return errorResponse(
+        "Order type must be MARKET or LIMIT."
+      );
     }
 
     if (
@@ -154,16 +155,21 @@ export async function POST(request: Request) {
       quantity <= 0 ||
       quantity > 1000000000
     ) {
-      return errorResponse("Quantity must be a positive number.");
+      return errorResponse(
+        "Quantity must be a positive number."
+      );
     }
 
     if (
       typeof amount !== "number" ||
       !Number.isFinite(amount) ||
-      amount < 0.01 ||
-      amount > 1000000000
+      amount < 1 ||
+      amount > 1000000000 ||
+      Math.round(amount * 100) !== amount * 100
     ) {
-      return errorResponse("Amount must be at least 0.01 USD and no more than 1000000000 USD.");
+      return errorResponse(
+        "Amount must be at least 1 USD, at most 1000000000 USD, and have no more than two decimal places."
+      );
     }
 
     if (
@@ -175,21 +181,28 @@ export async function POST(request: Request) {
         rawLimitPrice > 1000000000
       )
     ) {
-      return errorResponse("A positive limit price is required for limit requests.");
+      return errorResponse(
+        "A positive limit price is required for limit requests."
+      );
     }
 
     const limitPrice: number | undefined =
-      orderType === "LIMIT" && typeof rawLimitPrice === "number"
+      orderType === "LIMIT" &&
+      typeof rawLimitPrice === "number"
         ? rawLimitPrice
         : undefined;
 
     if (notes.length > 500) {
-      return errorResponse("Notes cannot exceed 500 characters.");
+      return errorResponse(
+        "Notes cannot exceed 500 characters."
+      );
     }
 
     await connectDB();
 
-    const account = await RealTradingAccount.findOne({ userId: user.id });
+    const account = await RealTradingAccount.findOne({
+      userId: user.id,
+    });
 
     if (
       !account ||
@@ -206,7 +219,10 @@ export async function POST(request: Request) {
     }
 
     if (account.status !== "ACTIVE") {
-      return errorResponse("Your internal trading account is suspended.", 403);
+      return errorResponse(
+        "Your internal trading account is suspended.",
+        403
+      );
     }
 
     const tradeRequest = await RealTradeRequest.create({
@@ -220,22 +236,25 @@ export async function POST(request: Request) {
       ...(orderType === "LIMIT" ? { limitPrice } : {}),
       ...(notes ? { notes } : {}),
       status: "PENDING_REVIEW",
-      paymentStatus: "NOT_INTEGRATED",
+      paymentStatus: "UNPAID",
     });
 
     return NextResponse.json(
       {
         success: true,
-        message: "Trade request submitted for administrator review.",
+        message:
+          "Trade request created. Complete payment to continue.",
         request: tradeRequest,
         notice:
-          "This is an internal request only. No payment was processed and no market order was executed.",
+          "This request is not a broker order. Payment must be verified separately, and payment confirmation does not execute a market order.",
       },
       { status: 201 }
     );
   } catch (error) {
     console.error("REAL REQUESTS POST ERROR:", error);
-    return errorResponse("Unable to submit trade request.", 500);
+    return errorResponse(
+      "Unable to submit trade request.",
+      500
+    );
   }
 }
-

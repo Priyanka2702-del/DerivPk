@@ -1,5 +1,4 @@
-﻿
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 
@@ -23,6 +22,16 @@ type ApiResponse = {
   success: boolean;
   message?: string;
   notice?: string;
+  request?: TradeRequest;
+  payment?: {
+    _id?: string;
+    id?: string;
+    status?: string;
+    checkoutUrl?: string;
+    providerPaymentId?: string;
+    amountCents?: number;
+    currency?: string;
+  };
   account?: {
     _id?: string;
     id?: string;
@@ -32,6 +41,8 @@ type ApiResponse = {
   } | null;
   requests?: TradeRequest[];
 };
+
+type CryptoCurrency = "USDT" | "BTC" | "ETH";
 
 const initialForm = {
   symbol: "",
@@ -50,11 +61,13 @@ function formatDate(value?: string) {
 }
 
 function statusClass(status: TradeRequest["status"]) {
-  if (status === "APPROVED")
+  if (status === "APPROVED") {
     return "border-emerald-500/30 bg-emerald-500/10 text-emerald-400";
+  }
 
-  if (status === "REJECTED")
+  if (status === "REJECTED") {
     return "border-rose-500/30 bg-rose-500/10 text-rose-400";
+  }
 
   return "border-amber-500/30 bg-amber-500/10 text-amber-400";
 }
@@ -87,14 +100,10 @@ function FundsAction({
       </span>
 
       <span>
-        <span className="block font-semibold text-slate-100">
-          {title}
-        </span>
-
+        <span className="block font-semibold text-slate-100">{title}</span>
         <span className="mt-1 block text-xs leading-5 text-slate-400">
           {subtitle}
         </span>
-
         <span className="mt-3 inline-flex rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-amber-400">
           Not integrated
         </span>
@@ -107,19 +116,16 @@ export default function RealTradingPage() {
   const [requests, setRequests] = useState<TradeRequest[]>([]);
   const [account, setAccount] = useState<ApiResponse["account"]>();
   const [form, setForm] = useState(initialForm);
+  const [tradeCurrency, setTradeCurrency] =
+    useState<CryptoCurrency>("USDT");
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [creatingAccount, setCreatingAccount] = useState(false);
   const [accountFormOpen, setAccountFormOpen] = useState(false);
-  const [accountDetails, setAccountDetails] = useState<{
-    fullName: string;
-    email: string;
-    phone: string;
-    country: string;
-    consentAccepted: boolean;
-  }>({
+
+  const [accountDetails, setAccountDetails] = useState({
     fullName: "",
     email: "",
     phone: "",
@@ -133,7 +139,7 @@ export default function RealTradingPage() {
 
   const showPaymentNotice = (action: string) => {
     setPaymentNotice(
-      `${action}: Payment gateway not integrated yet. This feature will be available after secure payment integration. No payment has been initiated and your balance has not changed.`
+      `${action}: This wallet feature is not integrated yet. No payment has been initiated and your balance has not changed.`
     );
   };
 
@@ -167,44 +173,62 @@ export default function RealTradingPage() {
     }
   }, []);
 
-  const handleCreateAccount = useCallback(async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (creatingAccount) return;
+  const handleCreateAccount = useCallback(
+    async (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      if (creatingAccount) return;
 
-    setCreatingAccount(true);
-    setError("");
-    setSuccess("");
+      setCreatingAccount(true);
+      setError("");
+      setSuccess("");
 
-    try {
-      const response = await fetch("/api/trading/real/account", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(accountDetails),
-      });
+      try {
+        const response = await fetch("/api/trading/real/account", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(accountDetails),
+        });
 
-      const data = (await response.json()) as ApiResponse;
-      if (!response.ok || !data.success) {
-        throw new Error(data.message || "Unable to register your account.");
+        const data = (await response.json()) as ApiResponse;
+
+        if (!response.ok || !data.success) {
+          throw new Error(data.message || "Unable to register your account.");
+        }
+
+        if (!data.account) {
+          throw new Error(
+            "Account details were not returned. Please refresh and try again."
+          );
+        }
+
+        setAccount(data.account);
+        setAccountFormOpen(false);
+        setSuccess(
+          data.notice || data.message || "Account registration completed."
+        );
+
+        await loadRequests(true);
+      } catch (err) {
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Unable to register your account."
+        );
+      } finally {
+        setCreatingAccount(false);
       }
+    },
+    [accountDetails, creatingAccount, loadRequests]
+  );
 
-      if (!data.account) {
-        throw new Error("Account details were not returned. Please refresh and try again.");
-      }
-      setAccount(data.account);
-      setAccountFormOpen(false);
-      setSuccess(data.notice || data.message || "Account registration completed.");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to register your account.");
-    } finally {
-      setCreatingAccount(false);
-    }
-  }, [accountDetails, creatingAccount, loadRequests]);
   useEffect(() => {
     void loadRequests();
   }, [loadRequests]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (submitting) return;
 
     setError("");
     setSuccess("");
@@ -224,8 +248,15 @@ export default function RealTradingPage() {
       return;
     }
 
-    if (!Number.isFinite(amount) || amount < 0.01 || amount > 1e9) {
-      setError("Trade amount must be at least 0.01 USD and no more than 1000000000 USD.");
+    if (
+      !Number.isFinite(amount) ||
+      amount < 1 ||
+      amount > 1e9 ||
+      Math.round(amount * 100) !== amount * 100
+    ) {
+      setError(
+        "Trade amount must be at least 1 USD, at most 1000000000 USD, and use no more than two decimal places."
+      );
       return;
     }
 
@@ -241,6 +272,8 @@ export default function RealTradingPage() {
 
     setSubmitting(true);
 
+    let requestCreated = false;
+
     try {
       const payload = {
         symbol: form.symbol.trim().toUpperCase(),
@@ -252,30 +285,88 @@ export default function RealTradingPage() {
         notes: form.notes.trim(),
       };
 
-      const response = await fetch("/api/trading/real/requests", {
+      // Step 1: Create the internal trade request.
+      const requestResponse = await fetch("/api/trading/real/requests", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 
-      const data = (await response.json()) as ApiResponse;
+      const requestData = (await requestResponse.json()) as ApiResponse;
 
-      if (!response.ok || !data.success) {
-        throw new Error(data.message || "Unable to submit request.");
+      if (!requestResponse.ok || !requestData.success) {
+        throw new Error(
+          requestData.message || "Unable to submit trade request."
+        );
       }
 
+      requestCreated = true;
+
+      const tradeRequestId = requestData.request?._id;
+
       setForm(initialForm);
+      await loadRequests(true);
+
+      // The request must have an ID so the payment can be linked to it.
+      if (!tradeRequestId) {
+        setSuccess(
+          "Your trade request was created, but the server did not return its request ID. No payment was initiated. Refresh the page and check Request History."
+        );
+        return;
+      }
+
+      // Step 2: Create an OpexGT checkout for the exact request amount.
+      const paymentResponse = await fetch("/api/payments/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          purpose: "REAL_TRADE",
+          tradeRequestId,
+          amount,
+          currency: tradeCurrency,
+        }),
+      });
+
+      const paymentData = (await paymentResponse.json()) as ApiResponse;
+
+      if (!paymentResponse.ok || !paymentData.success) {
+        throw new Error(
+          paymentData.message ||
+            "The request was created, but checkout could not be started."
+        );
+      }
+
+      const checkoutUrl = paymentData.payment?.checkoutUrl;
+
+      if (
+        typeof checkoutUrl !== "string" ||
+        !checkoutUrl.startsWith("https://opexgt.com/")
+      ) {
+        throw new Error(
+          "The request was created, but a valid OpexGT checkout URL was not returned. Check Request History before retrying."
+        );
+      }
 
       setSuccess(
-        data.message ||
-          "Request submitted for admin review. No market order was executed."
+        "Trade request created. Opening OpexGT checkout now. Complete payment there; payment does not execute a broker trade."
       );
 
-      await loadRequests(true);
+      // Step 3: Redirect only to the expected HTTPS OpexGT host.
+      window.location.assign(checkoutUrl);
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Unable to submit request."
-      );
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Unable to submit the trade request.";
+
+      if (requestCreated) {
+        setError(
+          `${message} Your trade request may already exist. Check Request History before submitting again to avoid duplicate requests.`
+        );
+        await loadRequests(true);
+      } else {
+        setError(message);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -310,17 +401,14 @@ export default function RealTradingPage() {
 
   return (
     <main className="min-h-screen space-y-6 bg-[#080d18] p-4 text-slate-100 md:p-7">
-      {/* Header */}
       <header className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
         <div>
           <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-blue-400">
             DerivPk / Trading
           </p>
-
           <h1 className="text-2xl font-bold tracking-tight md:text-3xl">
             Real Trading Account
           </h1>
-
           <p className="mt-2 text-sm text-slate-400">
             Manage trade requests and account services.
           </p>
@@ -333,6 +421,7 @@ export default function RealTradingPage() {
           >
             Back to MT5 Accounts
           </a>
+
           <span
             className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold ${
               accountStatus === "ACTIVE"
@@ -355,563 +444,557 @@ export default function RealTradingPage() {
         </div>
       </header>
 
-      {/* Account notice */}
-            {account && (
+      {account && (
         <>
-      <section className="flex gap-3 rounded-2xl border border-blue-500/20 bg-blue-500/[0.07] p-4 md:p-5">
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/10 font-bold text-blue-400">
-          i
-        </span>
-
-        <div>
-          <h2 className="font-semibold text-blue-300">
-            Internal request account
-          </h2>
-
-          <p className="mt-1 text-sm leading-6 text-slate-400">
-            This account is not connected to a live broker. Trade requests are
-            reviewed by an administrator. Approval does not execute a market
-            order. Deposits, withdrawals and transfers are not enabled.
-          </p>
-        </div>
-      </section>
-
-      {/* Payment notice */}
-      {paymentNotice && (
-        <section
-          role="status"
-          className="flex gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/[0.08] p-4"
-        >
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500/10 text-lg text-amber-400">
-            !
-          </span>
-
-          <div className="min-w-0 flex-1">
-            <h2 className="font-semibold text-amber-300">
-              Payment gateway not integrated yet
-            </h2>
-            <p className="mt-1 text-sm leading-6 text-slate-300">
-              {paymentNotice}
-            </p>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setPaymentNotice("")}
-            aria-label="Dismiss payment notice"
-            className="h-8 rounded-lg px-2 text-slate-400 hover:bg-slate-800 hover:text-white"
-          >
-            Status
-          </button>
-        </section>
-      )}
-
-      {/* API alerts */}
-      {error && (
-        <div
-          role="alert"
-          className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-300"
-        >
-          {error}
-        </div>
-      )}
-
-      {success && (
-        <div
-          role="status"
-          className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-300"
-        >
-          {success}
-        </div>
-      )}
-
-      {/* Account overview */}
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {[
-          {
-            label: "Available balance",
-            value: "-",
-            detail: "Wallet not connected",
-            icon: "Balance",
-          },
-          {
-            label: "Account equity",
-            value: "-",
-            detail: "Broker data unavailable",
-            icon: "Equity",
-          },
-          {
-            label: "Open positions",
-            value: "-",
-            detail: "Live execution disabled",
-            icon: "Ã¢Å’Â",
-          },
-          {
-            label: "Trade requests",
-            value: String(requests.length),
-            detail: "Requests submitted by you",
-            icon: "Open",
-          },
-        ].map((item) => (
-          <article
-            key={item.label}
-            className={`${panel} p-5 transition hover:border-slate-600`}
-          >
-            <div className="flex items-start justify-between gap-3">
-              <p className="text-sm font-medium text-slate-400">
-                {item.label}
+          <section className="flex gap-3 rounded-2xl border border-blue-500/20 bg-blue-500/[0.07] p-4 md:p-5">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/10 font-bold text-blue-400">
+              i
+            </span>
+            <div>
+              <h2 className="font-semibold text-blue-300">
+                Internal request account
+              </h2>
+              <p className="mt-1 text-sm leading-6 text-slate-400">
+                This account is not connected to a live broker. Trade requests
+                are reviewed by an administrator. Payment confirmation does not
+                execute a market order. Deposits, withdrawals and transfers
+                are not enabled here.
               </p>
+            </div>
+          </section>
 
-              <span className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-700 bg-slate-800 text-lg text-blue-400">
-                {item.icon}
+          {paymentNotice && (
+            <section
+              role="status"
+              className="flex gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/[0.08] p-4"
+            >
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500/10 text-lg text-amber-400">
+                !
+              </span>
+              <div className="min-w-0 flex-1">
+                <h2 className="font-semibold text-amber-300">
+                  Wallet feature unavailable
+                </h2>
+                <p className="mt-1 text-sm leading-6 text-slate-300">
+                  {paymentNotice}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPaymentNotice("")}
+                aria-label="Dismiss payment notice"
+                className="h-8 rounded-lg px-2 text-slate-400 hover:bg-slate-800 hover:text-white"
+              >
+                Close
+              </button>
+            </section>
+          )}
+
+          {error && (
+            <div
+              role="alert"
+              className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-300"
+            >
+              {error}
+            </div>
+          )}
+
+          {success && (
+            <div
+              role="status"
+              className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-300"
+            >
+              {success}
+            </div>
+          )}
+
+          <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {[
+              {
+                label: "Available balance",
+                value: "-",
+                detail: "Wallet not connected",
+                icon: "Balance",
+              },
+              {
+                label: "Account equity",
+                value: "-",
+                detail: "Broker data unavailable",
+                icon: "Equity",
+              },
+              {
+                label: "Open positions",
+                value: "-",
+                detail: "Live execution disabled",
+                icon: "Positions",
+              },
+              {
+                label: "Trade requests",
+                value: String(requests.length),
+                detail: "Requests submitted by you",
+                icon: "Open",
+              },
+            ].map((item) => (
+              <article
+                key={item.label}
+                className={`${panel} p-5 transition hover:border-slate-600`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <p className="text-sm font-medium text-slate-400">
+                    {item.label}
+                  </p>
+                  <span className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-700 bg-slate-800 text-lg text-blue-400">
+                    {item.icon}
+                  </span>
+                </div>
+                <p className="mt-4 text-2xl font-bold tracking-tight text-white">
+                  {item.value}
+                </p>
+                <p className="mt-1 text-xs text-slate-500">{item.detail}</p>
+              </article>
+            ))}
+          </section>
+
+          <section className="space-y-3">
+            <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-end">
+              <div>
+                <h2 className="text-lg font-bold">Funds &amp; Wallet</h2>
+                <p className="mt-1 text-sm text-slate-400">
+                  Wallet deposits, withdrawals and transfers are not enabled
+                  in this section.
+                </p>
+              </div>
+              <span className="w-fit rounded-full border border-amber-500/20 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-400">
+                Not integrated
               </span>
             </div>
 
-            <p className="mt-4 text-2xl font-bold tracking-tight text-white">
-              {item.value}
-            </p>
-
-            <p className="mt-1 text-xs text-slate-500">{item.detail}</p>
-          </article>
-        ))}
-      </section>
-
-      {/* Funds */}
-      <section className="space-y-3">
-        <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-end">
-          <div>
-            <h2 className="text-lg font-bold">Funds & Wallet</h2>
-            <p className="mt-1 text-sm text-slate-400">
-              Payment services will be enabled after gateway integration.
-            </p>
-          </div>
-
-          <span className="w-fit rounded-full border border-amber-500/20 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-400">
-            Payment gateway pending
-          </span>
-        </div>
-
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <FundsAction
-            title="Add Money"
-            subtitle="Add funds to your account"
-            icon="Ã¯Â¼â€¹"
-            onClick={() => showPaymentNotice("Add Money")}
-          />
-
-          <FundsAction
-            title="Deposit"
-            subtitle="Deposit funds securely"
-            icon="Download"
-            onClick={() => showPaymentNotice("Deposit")}
-          />
-
-          <FundsAction
-            title="Withdraw"
-            subtitle="Withdrawal service"
-            icon="Open"
-            onClick={() => showPaymentNotice("Withdraw")}
-          />
-
-          <FundsAction
-            title="Transfer"
-            subtitle="Transfer between accounts"
-            icon="Transfer"
-            onClick={() => showPaymentNotice("Transfer")}
-          />
-        </div>
-
-        <button
-          type="button"
-          onClick={() => showPaymentNotice("Transaction History")}
-          className="text-sm font-medium text-blue-400 underline decoration-blue-400/30 underline-offset-4 hover:text-blue-300"
-        >
-          View transaction history
-        </button>
-      </section>
-
-              </>
-      )}
-
-      {account ? (
-      <>
-      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
-        {/* Trade ticket */}
-        <section className={`${panel} overflow-hidden`}>
-          <div className="border-b border-slate-700/70 p-5 md:p-6">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-blue-400">
-              Trade ticket
-            </p>
-
-            <h2 className="mt-1 text-xl font-bold">
-              Create trade request
-            </h2>
-
-            <p className="mt-1 text-sm text-slate-400">
-              Submit your request for administrator review.
-            </p>
-
-            <div className="mt-5 grid grid-cols-2 gap-2 rounded-xl border border-slate-700 bg-[#0b1220] p-1">
-              <button
-                type="button"
-                aria-pressed={form.side === "BUY"}
-                onClick={() => setForm({ ...form, side: "BUY" })}
-                className={`rounded-lg px-4 py-3 text-sm font-bold transition ${
-                  form.side === "BUY"
-                    ? "bg-emerald-600 text-white shadow-lg shadow-emerald-950/30"
-                    : "text-slate-400 hover:bg-slate-800 hover:text-white"
-                }`}
-              >
-                Buy
-              </button>
-
-              <button
-                type="button"
-                aria-pressed={form.side === "SELL"}
-                onClick={() => setForm({ ...form, side: "SELL" })}
-                className={`rounded-lg px-4 py-3 text-sm font-bold transition ${
-                  form.side === "SELL"
-                    ? "bg-rose-600 text-white shadow-lg shadow-rose-950/30"
-                    : "text-slate-400 hover:bg-slate-800 hover:text-white"
-                }`}
-              >
-                Sell
-              </button>
-            </div>
-          </div>
-
-          <form onSubmit={handleSubmit} className="space-y-5 p-5 md:p-6">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <label className="block text-sm font-semibold text-slate-300">
-                Symbol
-                <input
-                  value={form.symbol}
-                  onChange={(event) =>
-                    setForm({ ...form, symbol: event.target.value })
-                  }
-                  placeholder="e.g. AAPL or BTCUSD"
-                  maxLength={20}
-                  required
-                  className={`${field} uppercase`}
-                />
-              </label>
-
-              <label className="block text-sm font-semibold text-slate-300">
-                Order type
-                <select
-                  value={form.orderType}
-                  onChange={(event) =>
-                    setForm({
-                      ...form,
-                      orderType: event.target.value as "MARKET" | "LIMIT",
-                    })
-                  }
-                  className={field}
-                >
-                  <option value="MARKET">Market request</option>
-                  <option value="LIMIT">Limit request</option>
-                </select>
-              </label>
-
-              <label className="block text-sm font-semibold text-slate-300">
-                Quantity
-                <input
-                  type="number"
-                  min="0.000001"
-                  max="1000000000"
-                  step="any"
-                  value={form.quantity}
-                  onChange={(event) =>
-                    setForm({ ...form, quantity: event.target.value })
-                  }
-                  required
-                  className={field}
-                />
-              </label>
-
-              <label className="block text-sm font-semibold text-slate-300">
-                Trade Amount (USD)
-                <input
-                  type="number"
-                  min="0.01"
-                  max="1000000000"
-                  step="0.01"
-                  value={form.amount}
-                  onChange={(event) =>
-                    setForm({ ...form, amount: event.target.value })
-                  }
-                  required
-                  className={field}
-                  placeholder="e.g. 100.00"
-                />
-              </label>
-
-              {form.orderType === "LIMIT" && (
-                <label className="block text-sm font-semibold text-slate-300">
-                  Limit price
-                  <input
-                    type="number"
-                    min="0.000001"
-                    max="1000000000"
-                    step="any"
-                    value={form.limitPrice}
-                    onChange={(event) =>
-                      setForm({ ...form, limitPrice: event.target.value })
-                    }
-                    required
-                    className={field}
-                  />
-                </label>
-              )}
-            </div>
-
-            <label className="block text-sm font-semibold text-slate-300">
-              Notes{" "}
-              <span className="font-normal text-slate-500">(optional)</span>
-              <textarea
-                value={form.notes}
-                onChange={(event) =>
-                  setForm({ ...form, notes: event.target.value })
-                }
-                maxLength={500}
-                rows={3}
-                placeholder="Add details for the administrator..."
-                className={`${field} resize-y`}
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <FundsAction
+                title="Add Money"
+                subtitle="Add funds to your account"
+                icon="+"
+                onClick={() => showPaymentNotice("Add Money")}
               />
-            </label>
-
-            <div className="rounded-xl border border-slate-700 bg-[#0b1220] p-3 text-xs leading-5 text-slate-400">
-              <strong className="text-slate-200">Important:</strong>{" "}
-              this is a request for review only. It does not place a live order
-              or reserve funds.
+              <FundsAction
+                title="Deposit"
+                subtitle="Deposit funds securely"
+                icon="↓"
+                onClick={() => showPaymentNotice("Deposit")}
+              />
+              <FundsAction
+                title="Withdraw"
+                subtitle="Withdrawal service"
+                icon="↗"
+                onClick={() => showPaymentNotice("Withdraw")}
+              />
+              <FundsAction
+                title="Transfer"
+                subtitle="Transfer between accounts"
+                icon="⇄"
+                onClick={() => showPaymentNotice("Transfer")}
+              />
             </div>
 
             <button
-              type="submit"
-              disabled={submitting || account?.status === "SUSPENDED"}
-              className={`w-full rounded-xl px-5 py-3.5 text-sm font-bold text-white transition disabled:cursor-not-allowed disabled:opacity-50 ${
-                form.side === "BUY"
-                  ? "bg-emerald-600 hover:bg-emerald-500"
-                  : "bg-rose-600 hover:bg-rose-500"
-              }`}
+              type="button"
+              onClick={() => showPaymentNotice("Transaction History")}
+              className="text-sm font-medium text-blue-400 underline decoration-blue-400/30 underline-offset-4 hover:text-blue-300"
             >
-              {submitting
-                ? "Submitting request..."
-                : `Submit ${form.side === "BUY" ? "Buy" : "Sell"} Request`}
+              View wallet transaction history
             </button>
-          </form>
-        </section>
-
-        {/* Request overview */}
-        <aside className="space-y-4">
-          <section className={`${panel} p-5 md:p-6`}>
-            <h2 className="text-lg font-bold">Request Overview</h2>
-            <p className="mt-1 text-sm text-slate-400">
-              Current status of your submitted requests.
-            </p>
-
-            <div className="mt-5 space-y-3">
-              {[
-                {
-                  label: "Awaiting review",
-                  count: pendingCount,
-                  style:
-                    "border-amber-500/20 bg-amber-500/[0.08] text-amber-300",
-                },
-                {
-                  label: "Approved by admin",
-                  count: approvedCount,
-                  style:
-                    "border-emerald-500/20 bg-emerald-500/[0.08] text-emerald-300",
-                },
-                {
-                  label: "Rejected by admin",
-                  count: rejectedCount,
-                  style:
-                    "border-rose-500/20 bg-rose-500/[0.08] text-rose-300",
-                },
-              ].map((item) => (
-                <div
-                  key={item.label}
-                  className={`flex items-center justify-between rounded-xl border p-4 ${item.style}`}
-                >
-                  <span className="text-sm font-medium">{item.label}</span>
-                  <span className="text-xl font-bold tabular-nums">
-                    {item.count}
-                  </span>
-                </div>
-              ))}
-            </div>
           </section>
+        </>
+      )}
 
-          <section className={`${panel} p-5 md:p-6`}>
-            <h2 className="text-lg font-bold">How it works</h2>
+      {account ? (
+        <>
+          <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
+            <section className={`${panel} overflow-hidden`}>
+              <div className="border-b border-slate-700/70 p-5 md:p-6">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-blue-400">
+                  Trade ticket
+                </p>
+                <h2 className="mt-1 text-xl font-bold">
+                  Create trade request
+                </h2>
+                <p className="mt-1 text-sm text-slate-400">
+                  Submit your request and continue to OpexGT checkout.
+                </p>
 
-            <ol className="mt-4 space-y-4">
-              {[
-                {
-                  number: "01",
-                  title: "Submit a request",
-                  detail: "Choose Buy or Sell and provide the details.",
-                },
-                {
-                  number: "02",
-                  title: "Admin review",
-                  detail: "An administrator reviews your request.",
-                },
-                {
-                  number: "03",
-                  title: "Track the decision",
-                  detail: "Check status and feedback in request history.",
-                },
-              ].map((step) => (
-                <li key={step.number} className="flex gap-3">
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-700 bg-slate-800 text-xs font-bold text-blue-400">
-                    {step.number}
-                  </span>
-
-                  <div>
-                    <p className="text-sm font-semibold text-slate-200">
-                      {step.title}
-                    </p>
-                    <p className="mt-1 text-sm leading-5 text-slate-400">
-                      {step.detail}
-                    </p>
-                  </div>
-                </li>
-              ))}
-            </ol>
-          </section>
-        </aside>
-      </div>
-
-      {/* Request history */}
-      <section className={`${panel} overflow-hidden`}>
-        <div className="flex flex-col justify-between gap-2 border-b border-slate-700/70 p-5 md:flex-row md:items-center md:p-6">
-          <div>
-            <h2 className="text-lg font-bold">Request History</h2>
-            <p className="mt-1 text-sm text-slate-400">
-              Status and administrator feedback for your requests.
-            </p>
-          </div>
-
-          <span className="w-fit rounded-full border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-300">
-            {requests.length} total{" "}
-            {requests.length === 1 ? "request" : "requests"}
-          </span>
-        </div>
-
-        {requests.length === 0 ? (
-          <div className="px-6 py-14 text-center">
-            <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-700 bg-slate-800 text-xl text-slate-400">
-              Info
-            </span>
-            <h3 className="mt-3 font-semibold text-slate-200">
-              No requests yet
-            </h3>
-            <p className="mt-1 text-sm text-slate-400">
-              Submitted trade requests will appear here.
-            </p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[850px] text-left text-sm">
-              <thead className="bg-[#0b1220] text-xs uppercase tracking-wide text-slate-400">
-                <tr>
-                  <th className="px-5 py-4 font-semibold">Instrument</th>
-                  <th className="px-5 py-4 font-semibold">Side / Type</th>
-                  <th className="px-5 py-4 font-semibold">Quantity</th>
-                  <th className="px-5 py-4 font-semibold">Amount (USD)</th>
-                  <th className="px-5 py-4 font-semibold">Limit Price</th>
-                  <th className="px-5 py-4 font-semibold">Status</th>
-                  <th className="px-5 py-4 font-semibold">Submitted</th>
-                </tr>
-              </thead>
-
-              <tbody className="divide-y divide-slate-700/60">
-                {requests.map((item) => (
-                  <tr
-                    key={item._id}
-                    className="align-top transition hover:bg-slate-800/40"
+                <div className="mt-5 grid grid-cols-2 gap-2 rounded-xl border border-slate-700 bg-[#0b1220] p-1">
+                  <button
+                    type="button"
+                    aria-pressed={form.side === "BUY"}
+                    onClick={() => setForm({ ...form, side: "BUY" })}
+                    className={`rounded-lg px-4 py-3 text-sm font-bold transition ${
+                      form.side === "BUY"
+                        ? "bg-emerald-600 text-white shadow-lg shadow-emerald-950/30"
+                        : "text-slate-400 hover:bg-slate-800 hover:text-white"
+                    }`}
                   >
-                    <td className="px-5 py-4">
-                      <p className="font-bold text-slate-100">
-                        {item.symbol}
-                      </p>
+                    Buy
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={form.side === "SELL"}
+                    onClick={() => setForm({ ...form, side: "SELL" })}
+                    className={`rounded-lg px-4 py-3 text-sm font-bold transition ${
+                      form.side === "SELL"
+                        ? "bg-rose-600 text-white shadow-lg shadow-rose-950/30"
+                        : "text-slate-400 hover:bg-slate-800 hover:text-white"
+                    }`}
+                  >
+                    Sell
+                  </button>
+                </div>
+              </div>
 
-                      {item.notes && (
-                        <p className="mt-1 max-w-xs whitespace-pre-wrap text-xs leading-5 text-slate-400">
-                          {item.notes}
-                        </p>
-                      )}
+              <form onSubmit={handleSubmit} className="space-y-5 p-5 md:p-6">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <label className="block text-sm font-semibold text-slate-300">
+                    Symbol
+                    <input
+                      value={form.symbol}
+                      onChange={(event) =>
+                        setForm({ ...form, symbol: event.target.value })
+                      }
+                      placeholder="e.g. AAPL or BTCUSD"
+                      maxLength={20}
+                      required
+                      className={`${field} uppercase`}
+                    />
+                  </label>
 
-                      {item.rejectionReason && (
-                        <p className="mt-2 max-w-xs text-xs text-rose-400">
-                          Reason: {item.rejectionReason}
-                        </p>
-                      )}
+                  <label className="block text-sm font-semibold text-slate-300">
+                    Order type
+                    <select
+                      value={form.orderType}
+                      onChange={(event) =>
+                        setForm({
+                          ...form,
+                          orderType: event.target.value as "MARKET" | "LIMIT",
+                        })
+                      }
+                      className={field}
+                    >
+                      <option value="MARKET">Market request</option>
+                      <option value="LIMIT">Limit request</option>
+                    </select>
+                  </label>
 
-                      {item.adminNote && (
-                        <p className="mt-2 max-w-xs text-xs text-slate-400">
-                          Admin note: {item.adminNote}
-                        </p>
-                      )}
-                    </td>
+                  <label className="block text-sm font-semibold text-slate-300">
+                    Quantity
+                    <input
+                      type="number"
+                      min="0.000001"
+                      max="1000000000"
+                      step="any"
+                      value={form.quantity}
+                      onChange={(event) =>
+                        setForm({ ...form, quantity: event.target.value })
+                      }
+                      required
+                      className={field}
+                    />
+                  </label>
 
-                    <td className="px-5 py-4">
-                      <span
-                        className={`inline-flex rounded-lg px-2.5 py-1 text-xs font-bold ${
-                          item.side === "BUY"
-                            ? "bg-emerald-500/10 text-emerald-400"
-                            : "bg-rose-500/10 text-rose-400"
-                        }`}
-                      >
-                        {item.side}
+                  <label className="block text-sm font-semibold text-slate-300">
+                    Trade Amount (USD)
+                    <input
+                      type="number"
+                      min="1"
+                      max="1000000000"
+                      step="0.01"
+                      value={form.amount}
+                      onChange={(event) =>
+                        setForm({ ...form, amount: event.target.value })
+                      }
+                      required
+                      className={field}
+                      placeholder="e.g. 100.00"
+                    />
+                  </label>
+
+                  <label className="block text-sm font-semibold text-slate-300 sm:col-span-2">
+                    Payment cryptocurrency
+                    <select
+                      value={tradeCurrency}
+                      onChange={(event) =>
+                        setTradeCurrency(event.target.value as CryptoCurrency)
+                      }
+                      className={field}
+                    >
+                      <option value="USDT">USDT</option>
+                      <option value="BTC">BTC</option>
+                      <option value="ETH">ETH</option>
+                    </select>
+                    <span className="mt-2 block text-xs font-normal leading-5 text-slate-400">
+                      Your payment is for the USD amount entered above. The
+                      final crypto amount and checkout instructions are
+                      provided by OpexGT.
+                    </span>
+                  </label>
+
+                  {form.orderType === "LIMIT" && (
+                    <label className="block text-sm font-semibold text-slate-300">
+                      Limit price
+                      <input
+                        type="number"
+                        min="0.000001"
+                        max="1000000000"
+                        step="any"
+                        value={form.limitPrice}
+                        onChange={(event) =>
+                          setForm({ ...form, limitPrice: event.target.value })
+                        }
+                        required
+                        className={field}
+                      />
+                    </label>
+                  )}
+                </div>
+
+                <label className="block text-sm font-semibold text-slate-300">
+                  Notes{" "}
+                  <span className="font-normal text-slate-500">(optional)</span>
+                  <textarea
+                    value={form.notes}
+                    onChange={(event) =>
+                      setForm({ ...form, notes: event.target.value })
+                    }
+                    maxLength={500}
+                    rows={3}
+                    placeholder="Add details for the administrator..."
+                    className={`${field} resize-y`}
+                  />
+                </label>
+
+                <div className="rounded-xl border border-blue-500/20 bg-blue-500/[0.06] p-3 text-xs leading-5 text-slate-300">
+                  <strong className="text-blue-300">Payment required:</strong>{" "}
+                  submitting the request will create an OpexGT checkout for
+                  the entered USD amount. Both Buy and Sell requests use this
+                  payment flow. Payment confirmation does not execute a live
+                  broker order or guarantee request approval.
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={submitting || account?.status === "SUSPENDED"}
+                  className={`w-full rounded-xl px-5 py-3.5 text-sm font-bold text-white transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                    form.side === "BUY"
+                      ? "bg-emerald-600 hover:bg-emerald-500"
+                      : "bg-rose-600 hover:bg-rose-500"
+                  }`}
+                >
+                  {submitting
+                    ? "Creating request and checkout..."
+                    : `Continue to Payment — ${form.side}`}
+                </button>
+              </form>
+            </section>
+
+            <aside className="space-y-4">
+              <section className={`${panel} p-5 md:p-6`}>
+                <h2 className="text-lg font-bold">Request Overview</h2>
+                <p className="mt-1 text-sm text-slate-400">
+                  Current status of your submitted requests.
+                </p>
+
+                <div className="mt-5 space-y-3">
+                  {[
+                    {
+                      label: "Awaiting review",
+                      count: pendingCount,
+                      style:
+                        "border-amber-500/20 bg-amber-500/[0.08] text-amber-300",
+                    },
+                    {
+                      label: "Approved by admin",
+                      count: approvedCount,
+                      style:
+                        "border-emerald-500/20 bg-emerald-500/[0.08] text-emerald-300",
+                    },
+                    {
+                      label: "Rejected by admin",
+                      count: rejectedCount,
+                      style:
+                        "border-rose-500/20 bg-rose-500/[0.08] text-rose-300",
+                    },
+                  ].map((item) => (
+                    <div
+                      key={item.label}
+                      className={`flex items-center justify-between rounded-xl border p-4 ${item.style}`}
+                    >
+                      <span className="text-sm font-medium">{item.label}</span>
+                      <span className="text-xl font-bold tabular-nums">
+                        {item.count}
                       </span>
-                      <p className="mt-2 text-xs text-slate-400">
-                        {item.orderType}
-                      </p>
-                    </td>
+                    </div>
+                  ))}
+                </div>
+              </section>
 
-                    <td className="px-5 py-4 font-medium tabular-nums text-slate-300">
-                      {item.quantity}
-                    </td>
-                    <td className="px-5 py-4 font-medium tabular-nums text-slate-300">
-                      {Number(item.amount).toLocaleString("en-US", {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}
-                    </td>
-
-                    <td className="px-5 py-4 tabular-nums text-slate-300">
-                      {item.limitPrice != null ? item.limitPrice : "-"}
-                    </td>
-
-                    <td className="px-5 py-4">
-                      <span
-                        className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${statusClass(
-                          item.status
-                        )}`}
-                      >
-                        {item.status.replaceAll("_", " ")}
+              <section className={`${panel} p-5 md:p-6`}>
+                <h2 className="text-lg font-bold">How it works</h2>
+                <ol className="mt-4 space-y-4">
+                  {[
+                    {
+                      number: "01",
+                      title: "Submit a request",
+                      detail: "Choose Buy or Sell and enter the request details.",
+                    },
+                    {
+                      number: "02",
+                      title: "Complete payment",
+                      detail:
+                        "Continue to OpexGT and follow its checkout instructions.",
+                    },
+                    {
+                      number: "03",
+                      title: "Admin review",
+                      detail:
+                        "The request remains subject to administrator review. No broker order is executed by this page.",
+                    },
+                  ].map((step) => (
+                    <li key={step.number} className="flex gap-3">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-700 bg-slate-800 text-xs font-bold text-blue-400">
+                        {step.number}
                       </span>
-
-                      <p className="mt-2 text-xs text-slate-400">
-                        Payment: {item.paymentStatus || "NOT_INTEGRATED"}
-                      </p>
-                    </td>
-
-                    <td className="whitespace-nowrap px-5 py-4 text-xs text-slate-400">
-                      {formatDate(item.createdAt)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                      <div>
+                        <p className="text-sm font-semibold text-slate-200">
+                          {step.title}
+                        </p>
+                        <p className="mt-1 text-sm leading-5 text-slate-400">
+                          {step.detail}
+                        </p>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+              </section>
+            </aside>
           </div>
-        )}
-      </section>
-      </>
+
+          <section className={`${panel} overflow-hidden`}>
+            <div className="flex flex-col justify-between gap-2 border-b border-slate-700/70 p-5 md:flex-row md:items-center md:p-6">
+              <div>
+                <h2 className="text-lg font-bold">Request History</h2>
+                <p className="mt-1 text-sm text-slate-400">
+                  Request status, payment status and administrator feedback.
+                </p>
+              </div>
+              <span className="w-fit rounded-full border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-300">
+                {requests.length} total{" "}
+                {requests.length === 1 ? "request" : "requests"}
+              </span>
+            </div>
+
+            {requests.length === 0 ? (
+              <div className="px-6 py-14 text-center">
+                <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-700 bg-slate-800 text-xl text-slate-400">
+                  i
+                </span>
+                <h3 className="mt-3 font-semibold text-slate-200">
+                  No requests yet
+                </h3>
+                <p className="mt-1 text-sm text-slate-400">
+                  Submitted trade requests will appear here.
+                </p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[900px] text-left text-sm">
+                  <thead className="bg-[#0b1220] text-xs uppercase tracking-wide text-slate-400">
+                    <tr>
+                      <th className="px-5 py-4 font-semibold">Instrument</th>
+                      <th className="px-5 py-4 font-semibold">Side / Type</th>
+                      <th className="px-5 py-4 font-semibold">Quantity</th>
+                      <th className="px-5 py-4 font-semibold">Amount (USD)</th>
+                      <th className="px-5 py-4 font-semibold">Limit Price</th>
+                      <th className="px-5 py-4 font-semibold">Status</th>
+                      <th className="px-5 py-4 font-semibold">Submitted</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-700/60">
+                    {requests.map((item) => (
+                      <tr
+                        key={item._id}
+                        className="align-top transition hover:bg-slate-800/40"
+                      >
+                        <td className="px-5 py-4">
+                          <p className="font-bold text-slate-100">
+                            {item.symbol}
+                          </p>
+                          {item.notes && (
+                            <p className="mt-1 max-w-xs whitespace-pre-wrap text-xs leading-5 text-slate-400">
+                              {item.notes}
+                            </p>
+                          )}
+                          {item.rejectionReason && (
+                            <p className="mt-2 max-w-xs text-xs text-rose-400">
+                              Reason: {item.rejectionReason}
+                            </p>
+                          )}
+                          {item.adminNote && (
+                            <p className="mt-2 max-w-xs text-xs text-slate-400">
+                              Admin note: {item.adminNote}
+                            </p>
+                          )}
+                        </td>
+
+                        <td className="px-5 py-4">
+                          <span
+                            className={`inline-flex rounded-lg px-2.5 py-1 text-xs font-bold ${
+                              item.side === "BUY"
+                                ? "bg-emerald-500/10 text-emerald-400"
+                                : "bg-rose-500/10 text-rose-400"
+                            }`}
+                          >
+                            {item.side}
+                          </span>
+                          <p className="mt-2 text-xs text-slate-400">
+                            {item.orderType}
+                          </p>
+                        </td>
+
+                        <td className="px-5 py-4 font-medium tabular-nums text-slate-300">
+                          {item.quantity}
+                        </td>
+                        <td className="px-5 py-4 font-medium tabular-nums text-slate-300">
+                          {Number(item.amount).toLocaleString("en-US", {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </td>
+                        <td className="px-5 py-4 tabular-nums text-slate-300">
+                          {item.limitPrice != null ? item.limitPrice : "-"}
+                        </td>
+
+                        <td className="px-5 py-4">
+                          <span
+                            className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${statusClass(
+                              item.status
+                            )}`}
+                          >
+                            {item.status.replaceAll("_", " ")}
+                          </span>
+                          <p className="mt-2 text-xs text-slate-400">
+                            Payment: {item.paymentStatus || "UNPAID"}
+                          </p>
+                        </td>
+
+                        <td className="whitespace-nowrap px-5 py-4 text-xs text-slate-400">
+                          {formatDate(item.createdAt)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        </>
       ) : account === null ? (
         <section className={`${panel} mx-auto w-full max-w-3xl p-6 md:p-8`}>
           <div className="mx-auto max-w-xl">
@@ -923,10 +1006,13 @@ export default function RealTradingPage() {
                 Create Your Trading Request Account
               </h2>
               <p className="mt-3 text-sm leading-6 text-slate-400">
-                Click below to open the registration form. Your account will not be created until you submit it.
+                Click below to open the registration form. Your account will
+                not be created until you submit it.
               </p>
               <p className="mt-4 rounded-xl border border-amber-500/20 bg-amber-500/10 p-4 text-left text-sm leading-6 text-amber-200">
-                This is an internal DerivPk request account only. It does not create an Alpaca brokerage account, process payments, or execute trades.
+                This is an internal DerivPk request account. It does not create
+                a brokerage account or execute trades. Trade-request payments
+                are a separate checkout step.
               </p>
             </div>
 
@@ -934,108 +1020,212 @@ export default function RealTradingPage() {
               <div className="mt-6 text-center">
                 <button
                   type="button"
-                  onClick={() => { setError(""); setAccountFormOpen(true); }}
+                  onClick={() => {
+                    setError("");
+                    setAccountFormOpen(true);
+                  }}
                   className="w-full rounded-xl bg-blue-600 px-5 py-3.5 text-sm font-bold text-white transition hover:bg-blue-500 sm:w-auto"
                 >
                   Create Trading Account
                 </button>
               </div>
             ) : (
-              <form onSubmit={(event) => void handleCreateAccount(event)} className="mt-6 space-y-4">
+              <form
+                onSubmit={(event) => void handleCreateAccount(event)}
+                className="mt-6 space-y-4"
+              >
                 <div>
-                  <label htmlFor="account-full-name" className="text-sm font-medium text-slate-200">Full name</label>
-                  <input id="account-full-name" autoComplete="name" required minLength={2} maxLength={100}
+                  <label
+                    htmlFor="account-full-name"
+                    className="text-sm font-medium text-slate-200"
+                  >
+                    Full name
+                  </label>
+                  <input
+                    id="account-full-name"
+                    autoComplete="name"
+                    required
+                    minLength={2}
+                    maxLength={100}
                     value={accountDetails.fullName}
-                    onChange={(event) => setAccountDetails((current) => ({ ...current, fullName: event.target.value }))}
-                    className={field} placeholder="Enter your full name" />
+                    onChange={(event) =>
+                      setAccountDetails((current) => ({
+                        ...current,
+                        fullName: event.target.value,
+                      }))
+                    }
+                    className={field}
+                    placeholder="Enter your full name"
+                  />
                 </div>
+
                 <div>
-                  <label htmlFor="account-email" className="text-sm font-medium text-slate-200">Email address</label>
-                  <input id="account-email" type="email" autoComplete="email" required maxLength={254}
+                  <label
+                    htmlFor="account-email"
+                    className="text-sm font-medium text-slate-200"
+                  >
+                    Email address
+                  </label>
+                  <input
+                    id="account-email"
+                    type="email"
+                    autoComplete="email"
+                    required
+                    maxLength={254}
                     value={accountDetails.email}
-                    onChange={(event) => setAccountDetails((current) => ({ ...current, email: event.target.value }))}
-                    className={field} placeholder="you@example.com" />
+                    onChange={(event) =>
+                      setAccountDetails((current) => ({
+                        ...current,
+                        email: event.target.value,
+                      }))
+                    }
+                    className={field}
+                    placeholder="you@example.com"
+                  />
                 </div>
+
                 <div>
-                  <label htmlFor="account-phone" className="text-sm font-medium text-slate-200">Phone number</label>
-                  <input id="account-phone" type="tel" autoComplete="tel" required minLength={7} maxLength={20}
+                  <label
+                    htmlFor="account-phone"
+                    className="text-sm font-medium text-slate-200"
+                  >
+                    Phone number
+                  </label>
+                  <input
+                    id="account-phone"
+                    type="tel"
+                    autoComplete="tel"
+                    required
+                    minLength={7}
+                    maxLength={20}
                     value={accountDetails.phone}
-                    onChange={(event) => setAccountDetails((current) => ({ ...current, phone: event.target.value }))}
-                    className={field} placeholder="+91 9876543210" />
+                    onChange={(event) =>
+                      setAccountDetails((current) => ({
+                        ...current,
+                        phone: event.target.value,
+                      }))
+                    }
+                    className={field}
+                    placeholder="+91 9876543210"
+                  />
                 </div>
+
                 <div>
-                  <label htmlFor="account-country" className="text-sm font-medium text-slate-200">Country</label>
-                  <input id="account-country" autoComplete="country-name" required minLength={2} maxLength={60}
+                  <label
+                    htmlFor="account-country"
+                    className="text-sm font-medium text-slate-200"
+                  >
+                    Country
+                  </label>
+                  <input
+                    id="account-country"
+                    autoComplete="country-name"
+                    required
+                    minLength={2}
+                    maxLength={60}
                     value={accountDetails.country}
-                    onChange={(event) => setAccountDetails((current) => ({ ...current, country: event.target.value }))}
-                    className={field} />
+                    onChange={(event) =>
+                      setAccountDetails((current) => ({
+                        ...current,
+                        country: event.target.value,
+                      }))
+                    }
+                    className={field}
+                  />
                 </div>
+
                 <label className="flex items-start gap-3 rounded-xl border border-slate-700 p-4 text-sm leading-6 text-slate-300">
-                  <input type="checkbox" required checked={accountDetails.consentAccepted}
-                    onChange={(event) => setAccountDetails((current) => ({ ...current, consentAccepted: event.target.checked }))}
-                    className="mt-1 h-4 w-4 shrink-0 accent-blue-600" />
-                  <span>I understand this is an internal trade-request account. Requests are reviewed by an administrator; no payment or market order is executed by this registration.</span>
+                  <input
+                    type="checkbox"
+                    required
+                    checked={accountDetails.consentAccepted}
+                    onChange={(event) =>
+                      setAccountDetails((current) => ({
+                        ...current,
+                        consentAccepted: event.target.checked,
+                      }))
+                    }
+                    className="mt-1 h-4 w-4 shrink-0 accent-blue-600"
+                  />
+                  <span>
+                    I understand this is an internal trade-request account.
+                    Requests are reviewed by an administrator; registration
+                    does not execute a market order.
+                  </span>
                 </label>
 
-                {error && <p role="alert" className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-sm text-rose-300">{error}</p>}
+                {error && (
+                  <p
+                    role="alert"
+                    className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-sm text-rose-300"
+                  >
+                    {error}
+                  </p>
+                )}
 
                 <div className="flex flex-col gap-3 sm:flex-row">
-                  <button type="submit" disabled={creatingAccount}
-                    className="w-full rounded-xl bg-blue-600 px-5 py-3.5 text-sm font-bold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50">
+                  <button
+                    type="submit"
+                    disabled={creatingAccount}
+                    className="w-full rounded-xl bg-blue-600 px-5 py-3.5 text-sm font-bold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
                     {creatingAccount ? "Submitting..." : "Submit & Create Account"}
                   </button>
-                  <button type="button" disabled={creatingAccount}
-                    onClick={() => { setAccountFormOpen(false); setError(""); }}
-                    className="w-full rounded-xl border border-slate-600 px-5 py-3.5 text-sm font-semibold text-slate-200 hover:bg-slate-800 disabled:opacity-50">
+                  <button
+                    type="button"
+                    disabled={creatingAccount}
+                    onClick={() => {
+                      setAccountFormOpen(false);
+                      setError("");
+                    }}
+                    className="w-full rounded-xl border border-slate-600 px-5 py-3.5 text-sm font-semibold text-slate-200 hover:bg-slate-800 disabled:opacity-50"
+                  >
                     Cancel
                   </button>
                 </div>
               </form>
             )}
           </div>
-        </section>      ) : (
+        </section>
+      ) : (
         <section className={`${panel} p-6 text-sm text-slate-400`}>
-          Trading account information is not available. Please refresh the page
-          and try again.
+          Trading account information is not available. Please refresh the
+          page and try again.
         </section>
       )}
 
-            {account && (
-        <>
-      {/* Transaction history placeholder */}
-      <section className={`${panel} border-dashed p-5 md:p-6`}>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 className="font-bold text-slate-100">
-              Funds Transaction History
-            </h2>
-            <p className="mt-1 text-sm text-slate-400">
-              Deposits, withdrawals and transfers will appear after integration.
-            </p>
+      {account && (
+        <section className={`${panel} border-dashed p-5 md:p-6`}>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="font-bold text-slate-100">
+                Funds Transaction History
+              </h2>
+              <p className="mt-1 text-sm text-slate-400">
+                This section does not display wallet deposits, withdrawals or
+                transfers.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => showPaymentNotice("Transaction History")}
+              className="w-fit rounded-xl border border-slate-700 bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-300 transition hover:bg-slate-700"
+            >
+              Check availability
+            </button>
           </div>
-
-          <button
-            type="button"
-            onClick={() => showPaymentNotice("Transaction History")}
-            className="w-fit rounded-xl border border-slate-700 bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-300 transition hover:bg-slate-700"
-          >
-            Check availability
-          </button>
-        </div>
-
-        <p className="mt-4 rounded-xl border border-slate-700/70 bg-[#0b1220] p-4 text-sm leading-6 text-slate-400">
-          Payment gateway and wallet ledger are not connected. No simulated
-          deposits, withdrawals, or transaction records are displayed.
-        </p>
-      </section>
-        </>
+          <p className="mt-4 rounded-xl border border-slate-700/70 bg-[#0b1220] p-4 text-sm leading-6 text-slate-400">
+            OpexGT trade-request payments are separate from the wallet ledger.
+            Only verified payment status should be treated as paid. No
+            simulated wallet transactions are displayed.
+          </p>
+        </section>
       )}
 
       <p className="pb-2 text-center text-xs leading-5 text-slate-500">
-        DerivPk | Internal request workspace | Payments and broker execution
-        are not enabled.
+        DerivPk | Internal request workspace | Payment confirmation does not
+        mean broker execution.
       </p>
     </main>
   );
 }
-

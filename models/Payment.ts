@@ -1,12 +1,17 @@
-﻿import mongoose, { Schema, Model } from "mongoose";
+﻿
+import mongoose, { Schema, Model } from "mongoose";
 
 export type PaymentPurpose = "DEPOSIT" | "REAL_TRADE";
+
 export type PaymentStatus =
   | "PENDING"
   | "COMPLETED"
   | "FAILED"
   | "EXPIRED"
-  | "CANCELLED";
+  | "CANCELLED"
+  | "AMOUNT_MISMATCH";
+
+export type CryptoCurrency = "USDT" | "BTC" | "ETH";
 
 export interface IPayment {
   userId: mongoose.Types.ObjectId;
@@ -16,7 +21,13 @@ export interface IPayment {
   status: PaymentStatus;
   provider: string;
   providerPaymentId?: string;
+  providerOrderId?: string;
   checkoutUrl?: string;
+  depositAddress?: string;
+  cryptoCurrency?: CryptoCurrency;
+  cryptoAmount?: string;
+  txHash?: string;
+  expiresAt?: Date;
   tradeRequestId?: mongoose.Types.ObjectId;
   creditedAt?: Date;
   createdAt?: Date;
@@ -60,6 +71,7 @@ const PaymentSchema = new Schema<IPayment>(
         "FAILED",
         "EXPIRED",
         "CANCELLED",
+        "AMOUNT_MISMATCH",
       ],
       default: "PENDING",
       required: true,
@@ -76,11 +88,36 @@ const PaymentSchema = new Schema<IPayment>(
       trim: true,
       maxlength: 200,
     },
+    providerOrderId: {
+      type: String,
+      trim: true,
+      maxlength: 200,
+    },
     checkoutUrl: {
       type: String,
       trim: true,
       maxlength: 2000,
     },
+    depositAddress: {
+      type: String,
+      trim: true,
+      maxlength: 300,
+    },
+    cryptoCurrency: {
+      type: String,
+      enum: ["USDT", "BTC", "ETH"],
+    },
+    cryptoAmount: {
+      type: String,
+      trim: true,
+      maxlength: 100,
+    },
+    txHash: {
+      type: String,
+      trim: true,
+      maxlength: 200,
+    },
+    expiresAt: Date,
     tradeRequestId: {
       type: Schema.Types.ObjectId,
       ref: "RealTradeRequest",
@@ -91,6 +128,7 @@ const PaymentSchema = new Schema<IPayment>(
 );
 
 PaymentSchema.index({ userId: 1, createdAt: -1 });
+
 PaymentSchema.index(
   { provider: 1, providerPaymentId: 1 },
   {
